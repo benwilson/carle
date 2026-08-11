@@ -373,7 +373,7 @@ VOCABULARY_SECTION = "## How entries are verified"
 #: cannot be written without their constants, so the byte-literal guard skips them.
 #: The verification-word and command-id guards still cover them, so a fabricated
 #: per-command claim cannot hide here.
-SPEC_SECTIONS = ("## Transport", "## Frame format")
+SPEC_SECTIONS = ("## Transport", "## Frame format", "## Firmware update (OTA)")
 
 
 def unguarded_prose(document: str) -> str:
