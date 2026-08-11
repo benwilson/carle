@@ -1,0 +1,309 @@
+# The single owner of every Ruko 1088 command entry and its verification state.
+#
+# docs/protocol-reference.md is GENERATED from this file — edit here, then run
+# `uv run python scripts/generate_reference.py`. tests/test_table_invariants.py
+# enforces every rule below and runs in CI.
+#
+# status:      unmapped  -> capability known, frame not yet searched for
+#              unlocated -> searched the decompiled app, frame not found
+#              decoded   -> frame derived from the app, never run on hardware
+#              confirmed -> issued via the CLI, robot response observed
+# provenance:  vendor-marketing -> row exists because Ruko published the capability
+#              decompile        -> row exists because the frame was found in the app
+#
+# A vendor-marketing row can never carry an encoding.
+
+coverage_note: |
+  Every row below is seeded from Ruko's published capability counts, not from the
+  protocol. That means the row set is NOT known to be complete, and the rows are NOT
+  known to map one-to-one onto protocol commands — ten "songs" may turn out to be one
+  opcode with a parameter. Seeded rows exist to give the reverse-engineering work a
+  checklist, not to assert coverage.
+
+  Counts asserted by the invariant suite, from Ruko's published specifications:
+  10 songs, 8 dance tracks, 2 gymnastic routines, 4 stories, 14 voice commands.
+
+  Movement rows are seeded from the vendor's prose description of the robot's motion
+  ("forward/backward/turning", "walking and sliding") and carry no asserted count,
+  because Ruko publishes only "9 motor drives" — a hardware figure, not a capability
+  enumeration. Arm, shoulder, and elbow articulation is described in vendor copy but
+  not enumerated, so no articulation rows are seeded.
+
+  Ruko also advertises "200 programmable commands by app". The working interpretation
+  is that this describes user-composed sequence slots rather than distinct protocol
+  opcodes, which is why it is not seeded as 200 rows. UNCONFIRMED — the decompile
+  settles it.
+
+  The archived user manual in official-docs/ may supply real names for the songs,
+  stories, and voice commands currently recorded as numbered placeholders.
+
+commands:
+  # --- Movement -------------------------------------------------------------
+  - id: move_forward
+    capability: Walk forward
+    category: movement
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: move_backward
+    capability: Walk backward
+    category: movement
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: turn_left
+    capability: Turn left
+    category: movement
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: turn_right
+    capability: Turn right
+    category: movement
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: slide_left
+    capability: Slide left
+    category: movement
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: slide_right
+    capability: Slide right
+    category: movement
+    provenance: vendor-marketing
+    status: unmapped
+
+  # --- Songs (10 published) -------------------------------------------------
+  - id: song_01
+    capability: Song 1 of 10 (title not yet identified)
+    category: song
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: song_02
+    capability: Song 2 of 10 (title not yet identified)
+    category: song
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: song_03
+    capability: Song 3 of 10 (title not yet identified)
+    category: song
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: song_04
+    capability: Song 4 of 10 (title not yet identified)
+    category: song
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: song_05
+    capability: Song 5 of 10 (title not yet identified)
+    category: song
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: song_06
+    capability: Song 6 of 10 (title not yet identified)
+    category: song
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: song_07
+    capability: Song 7 of 10 (title not yet identified)
+    category: song
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: song_08
+    capability: Song 8 of 10 (title not yet identified)
+    category: song
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: song_09
+    capability: Song 9 of 10 (title not yet identified)
+    category: song
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: song_10
+    capability: Song 10 of 10 (title not yet identified)
+    category: song
+    provenance: vendor-marketing
+    status: unmapped
+
+  # --- Dance tracks (8 published) -------------------------------------------
+  - id: dance_01
+    capability: Dance track 1 of 8 (title not yet identified)
+    category: dance
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: dance_02
+    capability: Dance track 2 of 8 (title not yet identified)
+    category: dance
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: dance_03
+    capability: Dance track 3 of 8 (title not yet identified)
+    category: dance
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: dance_04
+    capability: Dance track 4 of 8 (title not yet identified)
+    category: dance
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: dance_05
+    capability: Dance track 5 of 8 (title not yet identified)
+    category: dance
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: dance_06
+    capability: Dance track 6 of 8 (title not yet identified)
+    category: dance
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: dance_07
+    capability: Dance track 7 of 8 (title not yet identified)
+    category: dance
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: dance_08
+    capability: Dance track 8 of 8 (title not yet identified)
+    category: dance
+    provenance: vendor-marketing
+    status: unmapped
+
+  # --- Gymnastic routines (2 published) -------------------------------------
+  - id: gymnastic_01
+    capability: Gymnastic routine 1 of 2 (name not yet identified)
+    category: gymnastic
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: gymnastic_02
+    capability: Gymnastic routine 2 of 2 (name not yet identified)
+    category: gymnastic
+    provenance: vendor-marketing
+    status: unmapped
+
+  # --- Stories (4 published) ------------------------------------------------
+  - id: story_01
+    capability: Story 1 of 4 (title not yet identified)
+    category: story
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: story_02
+    capability: Story 2 of 4 (title not yet identified)
+    category: story
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: story_03
+    capability: Story 3 of 4 (title not yet identified)
+    category: story
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: story_04
+    capability: Story 4 of 4 (title not yet identified)
+    category: story
+    provenance: vendor-marketing
+    status: unmapped
+
+  # --- Voice commands (14 published) ----------------------------------------
+  - id: voice_01
+    capability: Voice command 1 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_02
+    capability: Voice command 2 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_03
+    capability: Voice command 3 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_04
+    capability: Voice command 4 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_05
+    capability: Voice command 5 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_06
+    capability: Voice command 6 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_07
+    capability: Voice command 7 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_08
+    capability: Voice command 8 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_09
+    capability: Voice command 9 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_10
+    capability: Voice command 10 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_11
+    capability: Voice command 11 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_12
+    capability: Voice command 12 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_13
+    capability: Voice command 13 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
+
+  - id: voice_14
+    capability: Voice command 14 of 14 (phrase not yet identified)
+    category: voice
+    provenance: vendor-marketing
+    status: unmapped
