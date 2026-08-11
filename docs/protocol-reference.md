@@ -66,9 +66,9 @@ Movement frames (`0xB6`) carry six payload bytes:
 | 0 | mode — the app writes 1 or 2; 0 also drives the robot, so it is not an enable |
 | 1 | speed |
 | 2 | direction, 1-8 |
-| 3 | unknown — the app writes 1 or 2 here |
+| 3 | waist — 1 leans left, 2 returns upright |
 | 4 | limb selector, 1-12 |
-| 5 | unknown — the app never writes it |
+| 5 | no observable effect; see below |
 
 Direction runs counter-clockwise from 1 at RIGHT, so 3 is UP, 5 is LEFT and 7 is DOWN, with 0
 meaning no movement. Setting a direction and a speed makes the robot walk; it takes its steps
@@ -93,8 +93,21 @@ routine resumes within a second or two and moves the same joints.
 Nothing in the decompiled app explains these twelve numbers; it binds twelve on-screen buttons
 to them and stops there. The mapping above comes from watching the robot.
 
+The waist byte follows the same convention as the limb selector: an odd value acts, an even
+value returns. It reaches a joint nothing else does, which brings the count of separately
+addressable articulations to seven — six in the arms, one at the waist. Ruko publishes nine
+motor drives; the remaining two are presumably in the legs, which the direction and speed
+bytes drive together rather than individually.
+
+Byte 5 produced no effect under four separate methods: a sweep across small, mid and maximum
+values, sustained bursts of a single value, alternation between the extremes, and a full
+minute held down with the idle routine suppressed throughout. That is not proof the byte is
+dead — it may need a mode nothing here sets, or act on something with no outward sign — but
+it is a thorough negative result, and worth recording so the next person does not repeat it.
+
 **Not yet documented.** The gyro family's payload layout, the programmed-sequence format, and
-movement payload bytes 0, 3 and 5.
+what byte 0 selects. The app writes 1 or 2 there and 0 also drives the robot, so it is not an
+enable, but what it changes is unknown.
 
 ## Audio channel
 

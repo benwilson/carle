@@ -62,3 +62,19 @@ articulation, odd raising and even returning: arms forward (1-4), shoulders late
   limbs, so a pose is overwritten within a second or two. This is the practical limit on
   observation: watch the instant the frame lands or you are describing the idle routine.
   Untested idea — sending commands back to back may deny it a window.
+
+## move_rocker payload byte 3 (`p3`)
+
+| Parameters | What the robot did |
+|---|---|
+| `p3=1` / `p3=2` alternating | Leaned to the left, bending slightly at the WAIST. A joint the limb selector does not reach — the seventh motor drive of the nine Ruko publishes. Follows the same convention as the limb byte — odd acts, even returns. |
+| `p3=1` alone | Leans left at the waist, and holds. |
+| `p3=2` alone | Returns upright. Confirmed by the observer that the command did this, not their hand. |
+
+## move_rocker payload byte 5 (`p5`)
+
+| Parameters | What the robot did |
+|---|---|
+| `p5` = 1, 2, 3, 8, 64, 128, 255 | No movement of any kind, across two separate sweeps. The byte the app never writes appears to produce no motion. |
+| — | The observer noted the LED face and ears changing during the sweep, but flagged that both do so during idle as well, so the activity is NOT attributable. Untested hypothesis: `p5` drives the face/ear display, which nothing else in the movement frame reaches. Tested by alternating 1 and 255 twelve times: the display did not track the send rhythm. Hypothesis unsupported. |
+| `p5=1` held 60s | 22 back-to-back sends over a full minute, which also suppresses the idle routine for the whole window. Nothing. Across four separate methods — value sweep, sustained bursts, extreme alternation, and a held minute — this byte has no observable effect. |
