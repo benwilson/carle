@@ -76,6 +76,26 @@ listing, not from vendor documentation or observation, and it has not been check
 the two channels are genuinely independent — and so whether a program can drive motion while
 audio plays — is an open question, and one of the more interesting ones.
 
+## Autonomous behaviour
+
+**The robot acts without being told to.** Left alone, with nothing written to it, it begins
+playing music, moving and talking by itself after a delay. This was checked directly: a
+quiet robot, no traffic on the wire, and it started up anyway.
+
+This matters more for reading this document than for writing a client. Anything the robot
+does more than a few seconds after a frame arrives may be its own idea rather than a
+response, and telling the two apart from across a room is not reliable. An early entry here
+recorded a command as continuing to produce content for minutes; it was the robot's idle
+routine, and the entry has been narrowed to what happened immediately.
+
+So the working rule for anyone adding to this reference: attribute only what happens within
+a few seconds of a send, and say so when the timing was loose. Movement is easy — the robot
+takes its steps and stops. Audio is harder, because the idle routine plays the same content
+a command does.
+
+Nothing is known yet about what triggers the idle routine, how long it waits, or whether a
+frame exists that suppresses it.
+
 ## Command table
 
 The table below lists the robot's known capabilities and the verification state of each. It is
@@ -97,10 +117,13 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 > it: index 0, 1 and 2 each begin with a different song. Those tracks are reachable from
 > the protocol but not from the vendor's own app.
 >
-> The command starts playback rather than playing one track. After a send at index 2, a
-> further song played with no command sent. Whether the robot advances through a playlist
-> or the selected track is itself a medley is not yet distinguished, so the entry describes
-> what was observed rather than the mechanism behind it.
+> The robot acts unprompted. It enters pre-programmed idle behaviour on its own after a
+> delay, which is a confound for every observation in this file. Content that arrived
+> minutes after a send was initially read as playback continuing; it cannot be attributed
+> to the command, and the media_music entry has been narrowed to what was seen immediately.
+> Any observation taken more than a few seconds after a send should be treated as suspect
+> until the idle behaviour is characterised. Movement, by contrast, was one-shot: the robot
+> walked and stopped by itself.
 >
 > What the decompile established, unchanged. The vendor's published capability counts do
 > not map one-to-one onto protocol commands: the app exposes a single trigger per media
@@ -131,7 +154,7 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 > because nothing establishes a narrower one), and whether the other three media
 > categories address tracks the same way.
 
-**50 entries:** 44 unlocated, 4 decoded, 2 confirmed.
+**50 entries:** 44 unlocated, 3 decoded, 3 confirmed.
 
 ### Movement
 
@@ -143,7 +166,7 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 | `turn_right` | Turn right (superseded by move_rocker) | unlocated | — | — | — |
 | `slide_left` | Slide left (superseded by move_rocker) | unlocated | — | — | — |
 | `slide_right` | Slide right (superseded by move_rocker) | unlocated | — | — | — |
-| `move_rocker` | Drive movement and limbs; direction 1-8 counter-clockwise from RIGHT | decoded | `B6 06 00 00 00 00 00 00 00 AA` | — | derived: `NormolContorlActivity.sendconmmde() — decompiled from base.apk (com.ihunuo.jtlrobot)` |
+| `move_rocker` | Drive movement and limbs; direction 1-8 counter-clockwise from RIGHT | confirmed | `B6 06 00 32 03 00 00 00 35 AA` | Walked forward. Sent with mode at its default of 0, speed 50 and direction 3, which confirms the direction mapping derived from NormolContorlActivity (counter-clockwise from RIGHT=1, so 3 is up/forward) and shows that mode is not an enable — the app only ever writes 1 or 2 there, but 0 moves the robot. (sent at direction=3, speed=50) | [2026-08-11](../evidence/move_rocker-20260811T211646910616Z.log) |
 
 Parameters. The frame above is shown at each parameter's default.
 
@@ -170,7 +193,7 @@ Parameters. The frame above is shown at each parameter's default.
 | `song_08` | Song 8 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
 | `song_09` | Song 9 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
 | `song_10` | Song 10 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
-| `media_music` | Trigger the songs | confirmed | `B3 02 03 00 03 AA` | Starts audio playback beginning at the track selected by `index`, and the robot continues past that track without a further command. Observed: index 0 began with "Old MacDonald Had a Farm", index 1 with the ABC song, index 2 with "We Wish You a Merry Christmas" — after which "If You're Happy and You Know It" played with no command sent. Dancing accompanied playback at index 1 and 2. Whether playback advances through a playlist or a single track is a medley is not yet distinguished. | [2026-08-11](../evidence/media_music-20260811T210822337016Z.log) |
+| `media_music` | Trigger the songs | confirmed | `B3 02 03 00 03 AA` | Selects a track by `index` and begins playing it. Observed: index 0 began with "Old MacDonald Had a Farm", index 1 with the ABC song, index 2 with "We Wish You a Merry Christmas". Dancing accompanied playback at every index observed, including 0. CONFOUNDED: further songs played minutes later with no command on the wire, which was first read as playback continuing on its own — but the robot is since known to enter pre-programmed idle behaviour unprompted, so that later content cannot be attributed to this command. Only the track each index STARTS with is established. | [2026-08-11](../evidence/media_music-20260811T210822337016Z.log) |
 
 Parameters. The frame above is shown at each parameter's default.
 

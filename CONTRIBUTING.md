@@ -55,6 +55,13 @@ erodes, a test does not.
 Commit the send log with the promotion. The gate resolves the path on a fresh checkout,
 so an uncommitted log fails the build for everyone else.
 
+### The robot acts on its own
+
+It runs an idle routine unprompted — music, movement, speech — using the same content a
+command produces. Attribute only what happens within a few seconds of your send, and note it
+when the timing was loose. One entry here already had to be narrowed after its "the command
+kept going" behaviour turned out to be the robot amusing itself.
+
 If you decode a frame but have no robot to test it against, mark it `decoded`. That is a real
 contribution and the honest label for it.
 

@@ -116,6 +116,12 @@ uv run python scripts/generate_reference.py
 uv run pytest
 ```
 
+**Watch the clock, not just the robot.** It runs a pre-programmed idle routine on its own,
+playing the same music and making the same movements a command does. Anything happening more
+than a few seconds after your send is probably its own idea. Describe what you saw
+immediately, and say so if the timing was loose — a wrong attribution here is worse than a
+thin one, because it reads as protocol behaviour forever after.
+
 `confirm` finds the most recent real send log for that command, rebuilds the entry at the
 parameters that log recorded, and refuses if they no longer produce the same frame — the
 observation described a different command. On success it sets the status, your behavior

@@ -24,10 +24,13 @@ coverage_note: |
   it: index 0, 1 and 2 each begin with a different song. Those tracks are reachable from
   the protocol but not from the vendor's own app.
 
-  The command starts playback rather than playing one track. After a send at index 2, a
-  further song played with no command sent. Whether the robot advances through a playlist
-  or the selected track is itself a medley is not yet distinguished, so the entry describes
-  what was observed rather than the mechanism behind it.
+  The robot acts unprompted. It enters pre-programmed idle behaviour on its own after a
+  delay, which is a confound for every observation in this file. Content that arrived
+  minutes after a send was initially read as playback continuing; it cannot be attributed
+  to the command, and the media_music entry has been narrowed to what was seen immediately.
+  Any observation taken more than a few seconds after a send should be treated as suspect
+  until the idle behaviour is characterised. Movement, by contrast, was one-shot: the robot
+  walked and stopped by itself.
 
   What the decompile established, unchanged. The vendor's published capability counts do
   not map one-to-one onto protocol commands: the app exposes a single trigger per media
@@ -407,12 +410,12 @@ commands:
       min: 0
       max: 255
       default: 0
-  observed_behavior: 'Starts audio playback beginning at the track selected by `index`, and the robot
-    continues past that track without a further command. Observed: index 0 began with "Old MacDonald
-    Had a Farm", index 1 with the ABC song, index 2 with "We Wish You a Merry Christmas" — after which
-    "If You''re Happy and You Know It" played with no command sent. Dancing accompanied playback at
-    index 1 and 2. Whether playback advances through a playlist or a single track is a medley is not
-    yet distinguished.'
+  observed_behavior: 'Selects a track by `index` and begins playing it. Observed: index 0 began with
+    "Old MacDonald Had a Farm", index 1 with the ABC song, index 2 with "We Wish You a Merry Christmas".
+    Dancing accompanied playback at every index observed, including 0. CONFOUNDED: further songs played
+    minutes later with no command on the wire, which was first read as playback continuing on its
+    own — but the robot is since known to enter pre-programmed idle behaviour unprompted, so that
+    later content cannot be attributed to this command. Only the track each index STARTS with is established.'
   observed_parameters: {}
   hardware_evidence:
     date: '2026-08-11'
@@ -437,7 +440,7 @@ commands:
   capability: Drive movement and limbs; direction 1-8 counter-clockwise from RIGHT
   category: movement
   provenance: decompile
-  status: decoded
+  status: confirmed
   derivation: NormolContorlActivity.sendconmmde() — decompiled from base.apk (com.ihunuo.jtlrobot)
   family: '0xB6'
   payload:
@@ -472,3 +475,14 @@ commands:
       min: 0
       max: 255
       default: 0
+  observed_behavior: Walked forward. Sent with mode at its default of 0, speed 50 and direction 3,
+    which confirms the direction mapping derived from NormolContorlActivity (counter-clockwise from
+    RIGHT=1, so 3 is up/forward) and shows that mode is not an enable — the app only ever writes 1
+    or 2 there, but 0 moves the robot.
+  observed_parameters:
+    direction: 3
+    speed: 50
+  hardware_evidence:
+    date: '2026-08-11'
+    platform: darwin
+    log: evidence/move_rocker-20260811T211646910616Z.log
