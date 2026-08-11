@@ -1,0 +1,10 @@
+kind: send
+entry: move_rocker
+frame: B6 06 00 00 00 00 00 FF FF AA
+parameters: p5=255
+timestamp: 2026-08-11T21:37:18.625752Z
+platform: darwin
+peripheral: 5B4DDB82-BB32-D566-E1F9-212CE37BD9A7
+write: ok
+write_detail: write-without-response
+notifications: 
