@@ -59,12 +59,42 @@ The checksum covers the payload only — not the family byte, not the length, no
 app computes it inline at each send site rather than in a shared helper, which is why the same
 arithmetic appears once per screen.
 
-Movement frames (`0xB6`, six payload bytes) carry a speed value, an eight-way direction, and a
-limb-action selector. Direction runs counter-clockwise from 1 at RIGHT, so 3 is UP, 5 is LEFT
-and 7 is DOWN, with 0 meaning no movement. Three payload bytes have no established meaning yet.
+Movement frames (`0xB6`) carry six payload bytes:
+
+| Byte | Meaning |
+|---|---|
+| 0 | mode — the app writes 1 or 2; 0 also drives the robot, so it is not an enable |
+| 1 | speed |
+| 2 | direction, 1-8 |
+| 3 | unknown — the app writes 1 or 2 here |
+| 4 | limb selector, 1-12 |
+| 5 | unknown — the app never writes it |
+
+Direction runs counter-clockwise from 1 at RIGHT, so 3 is UP, 5 is LEFT and 7 is DOWN, with 0
+meaning no movement. Setting a direction and a speed makes the robot walk; it takes its steps
+and stops on its own.
+
+The limb selector takes twelve values arranged as six pairs, running left then right through
+each articulation. Odd values raise and even values return:
+
+| Values | Joint | Motion |
+|---|---|---|
+| 1, 2 | Left arm | forward raise, a reaching motion |
+| 3, 4 | Right arm | forward raise |
+| 5, 6 | Left shoulder | lateral raise, a flapping motion |
+| 7, 8 | Right shoulder | lateral raise |
+| 9, 10 | Left elbow | bend, a handshake motion |
+| 11, 12 | Right elbow | bend |
+
+A limb holds its new position rather than springing back. Sending values in quick succession
+runs them in order, which is also the only practical way to watch one — the robot's idle
+routine resumes within a second or two and moves the same joints.
+
+Nothing in the decompiled app explains these twelve numbers; it binds twelve on-screen buttons
+to them and stops there. The mapping above comes from watching the robot.
 
 **Not yet documented.** The gyro family's payload layout, the programmed-sequence format, and
-the three unexplained movement bytes.
+movement payload bytes 0, 3 and 5.
 
 ## Audio channel
 

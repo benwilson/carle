@@ -22,6 +22,16 @@ Nothing in this file has passed the honesty gate. Treat it as a notebook.
 | `limb=4` | see 21:23-21:24 logs | The right-arm return. Alternating 3/4/3 moved the arm up, down, up. |
 | `limb=5` | see 21:25 logs | LEFT SHOULDER — lateral raise, described as flapping like a bird. Not the elbow: the distinction from `1`/`2` is the axis of motion, not how far the arm travels. |
 | `limb=6` | see 21:25 logs | The return for 5; alternating 5/6/5 produced the flapping motion. |
+| `limb=7` | see 21:27 logs | RIGHT SHOULDER — lateral raise, mirroring 5/6. Confirmed by alternating 7/8 on a loop: the right arm lifts and lowers, flapping. |
+| `limb=8` | see 21:27 logs | The return for 7. |
+| `limb=9` | see 21:29 logs | ELBOW bend — alternating 9/10 produced a handshake motion at the forearm. Side not stated by the observer; the left-then-right pattern predicts left, and 11/12 should settle it. |
+| `limb=10` | see 21:29 logs | The return for 9. |
+| `limb=11` | see 21:31 logs | RIGHT elbow bend, mirroring 9/10 — which retroactively settles that 9/10 was the left. |
+| `limb=12` | see 21:31 logs | The return for 11. |
+
+**The limb selector is fully mapped.** Six pairs, left then right through each
+articulation, odd raising and even returning: arms forward (1-4), shoulders laterally
+(5-8), elbows bending (9-12). Every value watched on hardware.
 
 ## media_music
 
