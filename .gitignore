@@ -19,3 +19,6 @@ uv.lock
 decompiled/
 captures/*.log
 btsnoop_hci.log
+
+# macOS
+.DS_Store
