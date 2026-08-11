@@ -21,3 +21,6 @@ btsnoop_hci.log
 
 # macOS
 .DS_Store
+
+# carle scratch (raw send logs are not evidence)
+.carle/

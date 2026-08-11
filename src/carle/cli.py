@@ -1,26 +1,30 @@
 """Command-line interface for the Ruko 1088.
 
-Three commands, all read-only against the robot:
+    carle scan                 list peripherals that look like the robot
+    carle connect ADDRESS      confirm a connection can be established
+    carle info ADDRESS         print the peripheral's GATT services
+    carle send ID              issue a documented command
+    carle confirm ID           promote a command to confirmed using its send log
 
-    carle scan             list peripherals that look like the robot
-    carle connect ADDRESS  confirm a connection can be established
-    carle info ADDRESS     print the peripheral's GATT services and characteristics
+`send` and `confirm` are two halves of one loop: send writes a log recording exactly
+what went out, you watch the robot, and confirm reads that log back. They are separate
+commands because the observation happens between them, in the physical world.
 
-`info` is the important one for now. Its raw output is the material the transport
-section of docs/protocol-reference.md gets written from, so it prints what it discovers
-verbatim rather than interpreting it.
-
-There is no command that writes to the robot. Adding one requires knowing the frame
-format, which nobody does yet.
+`confirm` is convenience, not enforcement. The invariant suite re-derives the same
+judgement from the committed files, so a promotion nobody earned fails in CI whether or
+not this code ever ran.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import datetime as dt
 import sys
+from pathlib import Path
 
-from carle import __version__
+from carle import __version__, evidence, frame
+from carle.table import TableError, load_rows, load_table, save_table
 from carle.transport import (
     AUTHORIZATION_DENIED_HELP,
     AUTHORIZATION_UNDETERMINED_HELP,
@@ -33,6 +37,15 @@ from carle.transport import (
     filter_robots,
     macos_authorization,
 )
+
+EVIDENCE_DIR = "evidence"
+#: Raw sends bypass the table, so their logs stay out of evidence/ entirely rather
+#: than relying on one editable line to keep them from supporting a promotion.
+RAW_LOG_DIR = ".carle/raw-logs"
+
+#: Commands that actually touch CoreBluetooth. A dry run does not, and must not be
+#: blocked by the macOS authorization guard.
+BLUETOOTH_COMMANDS = {"scan", "connect", "info"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,6 +71,37 @@ def build_parser() -> argparse.ArgumentParser:
     info = sub.add_parser("info", help="print the peripheral's GATT services")
     info.add_argument("address")
     info.add_argument("--timeout", type=float, default=DEFAULT_SCAN_TIMEOUT)
+
+    send = sub.add_parser("send", help="issue a documented command to the robot")
+    send.add_argument("entry", nargs="?", help="command id from protocol/commands.yaml")
+    send.add_argument("--address", help="peripheral address from `carle scan`")
+    send.add_argument(
+        "--param",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="override a declared parameter; repeatable",
+    )
+    send.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the frame and exit without connecting or writing a log",
+    )
+    send.add_argument("--raw", metavar="HEX", help="send an arbitrary payload, bypassing the table")
+    send.add_argument("--family", metavar="BYTE", help="family byte for --raw, e.g. 0xB3")
+    send.add_argument("--timeout", type=float, default=DEFAULT_SCAN_TIMEOUT)
+    send.add_argument("--evidence-dir", type=Path, default=None)
+    send.add_argument("--table", type=Path, default=None, help=argparse.SUPPRESS)
+
+    confirm = sub.add_parser(
+        "confirm", help="promote a decoded command to confirmed using its send log"
+    )
+    confirm.add_argument("entry")
+    confirm.add_argument(
+        "--behavior", required=True, help="what the robot actually did, in your words"
+    )
+    confirm.add_argument("--evidence-dir", type=Path, default=None)
+    confirm.add_argument("--table", type=Path, default=None, help=argparse.SUPPRESS)
 
     return parser
 
@@ -135,6 +179,172 @@ def _run_info(args: argparse.Namespace, backend: Backend) -> int:
     return 0
 
 
+def _parse_params(pairs: list[str]) -> dict[str, int]:
+    values: dict[str, int] = {}
+    for pair in pairs:
+        name, sep, raw = pair.partition("=")
+        if not sep:
+            raise ValueError(f"--param {pair!r} is not NAME=VALUE")
+        try:
+            values[name.strip()] = int(raw, 0)
+        except ValueError as exc:
+            raise ValueError(f"--param {pair!r} value is not a number") from exc
+    return values
+
+
+def _evidence_dir(args: argparse.Namespace, raw: bool) -> Path:
+    if args.evidence_dir is not None:
+        return Path(args.evidence_dir)
+    root = table_root()
+    return root / (RAW_LOG_DIR if raw else EVIDENCE_DIR)
+
+
+def table_root() -> Path:
+    from carle.table import repo_root
+
+    return repo_root()
+
+
+def _run_send(args: argparse.Namespace, backend: Backend) -> int:
+    raw_mode = args.raw is not None
+    try:
+        overrides = _parse_params(args.param)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    entry_id = None
+    try:
+        if raw_mode:
+            if args.family is None:
+                print("error: --raw also needs --family, e.g. --family 0xB3", file=sys.stderr)
+                return 1
+            payload = frame.from_hex(args.raw)
+            built = frame.build(frame.byte_literal(args.family), payload)
+        else:
+            if not args.entry:
+                print("error: give a command id, or use --raw with --family", file=sys.stderr)
+                return 1
+            entry = next((e for e in load_table(args.table).entries if e.id == args.entry), None)
+            if entry is None:
+                print(f"error: no command with id {args.entry!r}", file=sys.stderr)
+                return 1
+            if not entry.has_frame:
+                print(
+                    f"error: {entry.id} is '{entry.status}' — its frame is unknown, so there "
+                    "is nothing to send. Only decoded and confirmed commands have bytes.",
+                    file=sys.stderr,
+                )
+                return 1
+            entry_id = entry.id
+            built = entry.build_frame(overrides)
+    except (frame.FrameError, TableError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.dry_run:
+        # No connection, and deliberately no log: a dry run is hardware-free, so a log
+        # for one sitting in evidence/ would be a promotion waiting to happen.
+        print(frame.to_hex(built))
+        return 0
+
+    if not args.address:
+        print("error: --address is required; run `carle scan` to find it", file=sys.stderr)
+        return 1
+
+    try:
+        result = asyncio.run(backend.send(args.address, built, args.timeout))
+    except TransportError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    log = evidence.SendLog(
+        kind=evidence.KIND_RAW if raw_mode else evidence.KIND_SEND,
+        frame=built,
+        timestamp=dt.datetime.now(dt.timezone.utc).replace(tzinfo=None),
+        platform=sys.platform,
+        peripheral=args.address,
+        write_ok=result.ok,
+        entry_id=entry_id,
+        parameters=overrides,
+        write_detail=result.detail,
+        notifications=result.notifications,
+    )
+    try:
+        path = evidence.write_log(log, _evidence_dir(args, raw_mode))
+    except evidence.EvidenceError as exc:
+        print(f"error: sent, but the log could not be written: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"sent {frame.to_hex(built)}")
+    for note in result.notifications:
+        print(f"  notified: {frame.to_hex(note)}")
+    print(f"logged to {path}")
+    if not raw_mode:
+        print(f'confirm it with: carle confirm {entry_id} --behavior "what the robot did"')
+    return 0
+
+
+def _run_confirm(args: argparse.Namespace) -> int:
+    entry = next((e for e in load_table(args.table).entries if e.id == args.entry), None)
+    if entry is None:
+        print(f"error: no command with id {args.entry!r}", file=sys.stderr)
+        return 1
+    if not entry.has_frame:
+        print(f"error: {entry.id} has no frame, so there is nothing to confirm", file=sys.stderr)
+        return 1
+    if entry.status == "confirmed":
+        print(
+            f"error: {entry.id} is already confirmed. Rewriting evidence needs a "
+            "deliberate edit, not a second confirm.",
+            file=sys.stderr,
+        )
+        return 1
+
+    directory = _evidence_dir(args, raw=False)
+    log = evidence.latest_promotable(entry.id, directory)
+    if log is None:
+        print(
+            f"error: no send log for {entry.id} in {directory}. Run `carle send {entry.id} "
+            "--address ...` against a real robot first — a dry run does not count.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        expected = entry.build_frame(log.parameters)
+    except (frame.FrameError, TableError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if log.frame != expected:
+        print(
+            f"error: the log recorded {frame.to_hex(log.frame)} but {entry.id} now builds to "
+            f"{frame.to_hex(expected)}. The entry changed after the observation.",
+            file=sys.stderr,
+        )
+        return 1
+
+    rows = load_rows(args.table)
+    for row in rows:
+        if row["id"] == entry.id:
+            row["status"] = "confirmed"
+            row["observed_behavior"] = args.behavior
+            row["observed_parameters"] = dict(log.parameters)
+            row["hardware_evidence"] = {
+                # The calendar date, not the timestamp: table.py validates this with
+                # date.fromisoformat, which accepts nothing else on Python 3.10.
+                "date": log.date.isoformat(),
+                "platform": log.platform,
+                "log": f"{EVIDENCE_DIR}/{log.filename()}",
+            }
+    save_table(rows, args.table)
+
+    print(f"{entry.id} is now confirmed, citing {log.filename()}")
+    print("regenerate the reference: uv run python scripts/generate_reference.py")
+    return 0
+
+
 def main(
     argv: list[str] | None = None,
     backend: Backend | None = None,
@@ -142,17 +352,28 @@ def main(
 ) -> int:
     args = build_parser().parse_args(argv)
 
+    # A dry run and a confirm never reach CoreBluetooth, so the authorization guard
+    # must not block them — on a machine with Bluetooth denied it otherwise fails a
+    # command that touches no radio at all.
+    needs_bluetooth = args.command in BLUETOOTH_COMMANDS or (
+        args.command == "send" and not args.dry_run
+    )
+
     if authorization == "auto":
         # Only the real backend touches CoreBluetooth, so only it can be SIGABRT'd.
         # An injected backend is a test double and needs no permission.
-        authorization = macos_authorization() if backend is None else None
+        authorization = macos_authorization() if backend is None and needs_bluetooth else None
 
-    # Every command reaches CoreBluetooth — `connect` and `info` build a BleakClient,
-    # which initializes a central manager exactly as a scan does. Guarding only `scan`
-    # left those two dying by SIGABRT with no output, the failure this check exists for.
-    blocked = _check_macos_authorization(authorization)
-    if blocked is not None:
-        return blocked
+    if needs_bluetooth:
+        # `connect` and `info` build a BleakClient, which initializes a central manager
+        # exactly as a scan does. Guarding only `scan` left those two dying by SIGABRT
+        # with no output, the failure this check exists for.
+        blocked = _check_macos_authorization(authorization)
+        if blocked is not None:
+            return blocked
+
+    if args.command == "confirm":
+        return _run_confirm(args)
 
     backend = backend or BleakBackend()
 
@@ -162,6 +383,8 @@ def main(
         return _run_connect(args, backend)
     if args.command == "info":
         return _run_info(args, backend)
+    if args.command == "send":
+        return _run_send(args, backend)
     raise AssertionError(f"unhandled command {args.command!r}")
 
 

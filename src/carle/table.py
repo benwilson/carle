@@ -505,6 +505,38 @@ def validate_table(
     return problems
 
 
+#: Everything above this key is prose a round-trip would destroy — the comment header
+#: and `coverage_note`, which is a `|` literal block PyYAML re-emits as a quoted folded
+#: scalar. Splitting here and re-emitting the top verbatim keeps a promotion to a
+#: one-entry diff instead of a whole-file reflow.
+_SPLIT_KEY = "\ncommands:"
+
+
+def save_table(rows: list[dict[str, Any]], path: Path | str | None = None) -> None:
+    """Write the command rows back, preserving everything above ``commands:``.
+
+    Replaces atomically: a partial write would corrupt the file the entire published
+    reference is generated from.
+    """
+    path = Path(path) if path is not None else default_table_path()
+    current = path.read_text(encoding="utf-8")
+    head, sep, _ = current.partition(_SPLIT_KEY)
+    if not sep:
+        raise TableError(f"{path} has no top-level 'commands:' key to split on")
+
+    body = yaml.safe_dump({"commands": rows}, sort_keys=False, allow_unicode=True, width=96)
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text(head + "\n" + body, encoding="utf-8")
+    temp.replace(path)
+
+
+def load_rows(path: Path | str | None = None) -> list[dict[str, Any]]:
+    """The raw row mappings, for callers that need to write them back unchanged."""
+    path = Path(path) if path is not None else default_table_path()
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return raw["commands"]
+
+
 def load_seeded_ids(path: Path | str | None = None) -> list[str]:
     """Read the checked-in snapshot of ids created when the table was first seeded."""
     path = Path(path) if path is not None else repo_root() / "tests" / "fixtures" / "seeded_ids.txt"

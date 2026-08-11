@@ -16,6 +16,7 @@ from carle.transport import (
     DEFAULT_SCAN_TIMEOUT,
     Characteristic,
     Peripheral,
+    SendResult,
     Service,
     TransportError,
     describe_identity,
@@ -25,12 +26,16 @@ from carle.transport import (
 
 
 class FakeBackend:
-    def __init__(self, peripherals=None, services=None, error: Exception | None = None):
+    def __init__(
+        self, peripherals=None, services=None, error: Exception | None = None, notifications=None
+    ):
         self._peripherals = peripherals or []
         self._services = services or []
         self._error = error
         #: Recorded so tests can prove --timeout actually reaches the transport.
         self.timeouts: list[float] = []
+        self.sent: list[bytes] = []
+        self._notifications = notifications or []
 
     async def discover(self, timeout: float):
         self.timeouts.append(timeout)
@@ -43,6 +48,13 @@ class FakeBackend:
         if self._error:
             raise self._error
         return list(self._services)
+
+    async def send(self, address: str, payload: bytes, timeout: float = 8.0):
+        self.timeouts.append(timeout)
+        self.sent.append(payload)
+        if self._error:
+            raise self._error
+        return SendResult(ok=True, detail="fake", notifications=list(self._notifications))
 
 
 ROBOT = Peripheral(address="AA:BB:CC:DD:EE:FF", name="JT_1234", rssi=-52)
@@ -170,10 +182,10 @@ def test_unknown_platform_still_names_itself():
 # --- no write path ----------------------------------------------------------
 
 
-def test_there_is_no_send_subcommand():
-    """Dispatch needs a frame format nobody has documented. Guards against adding one early."""
-    with pytest.raises(SystemExit):
-        main(["send", "move_forward"], backend=FakeBackend())
+def test_send_requires_an_entry_or_raw():
+    """Replaces the old guard asserting `send` must not exist. The frame format is now
+    documented, so the command is legitimate — but it still refuses to guess."""
+    assert main(["send"], backend=FakeBackend(), authorization=None) == 1
 
 
 # --- filtering --------------------------------------------------------------
@@ -260,3 +272,344 @@ def test_default_timeout_is_forwarded(command=None):
     main(["scan"], backend=backend, authorization=None)
 
     assert backend.timeouts == [DEFAULT_SCAN_TIMEOUT]
+
+
+# --- send (U4) --------------------------------------------------------------
+
+
+def test_send_transmits_the_documented_frame(tmp_path):
+    backend = FakeBackend()
+    code = main(
+        ["send", "media_music", "--address", "AA:BB", "--evidence-dir", str(tmp_path)],
+        backend=backend,
+        authorization=None,
+    )
+    assert code == 0
+    assert backend.sent == [bytes([0xB3, 0x02, 0x03, 0x00, 0x03, 0xAA])]
+
+
+def test_a_parameter_override_changes_the_frame(tmp_path):
+    backend = FakeBackend()
+    main(
+        [
+            "send",
+            "media_music",
+            "--param",
+            "index=3",
+            "--address",
+            "AA:BB",
+            "--evidence-dir",
+            str(tmp_path),
+        ],
+        backend=backend,
+        authorization=None,
+    )
+    assert backend.sent == [bytes([0xB3, 0x02, 0x03, 0x03, 0x06, 0xAA])]
+
+
+def test_send_writes_a_log(tmp_path):
+    main(
+        ["send", "media_music", "--address", "AA:BB", "--evidence-dir", str(tmp_path)],
+        backend=FakeBackend(),
+        authorization=None,
+    )
+    logs = list(tmp_path.glob("media_music-*.log"))
+    assert len(logs) == 1
+
+
+def test_a_dry_run_writes_no_log_and_never_connects(tmp_path, capsys):
+    backend = FakeBackend()
+    code = main(
+        ["send", "media_music", "--dry-run", "--evidence-dir", str(tmp_path)],
+        backend=backend,
+        authorization=None,
+    )
+    assert code == 0
+    assert backend.sent == []
+    assert list(tmp_path.glob("*.log")) == []
+    assert "B3 02 03 00 03 AA" in capsys.readouterr().out
+
+
+def test_a_dry_run_works_with_bluetooth_denied(tmp_path, capsys):
+    """It touches no radio, so the authorization guard must not block it."""
+    code = main(
+        ["send", "media_music", "--dry-run", "--evidence-dir", str(tmp_path)],
+        backend=None,
+        authorization="denied",
+    )
+    assert code == 0
+    assert "B3 02 03 00 03 AA" in capsys.readouterr().out
+
+
+def test_send_refuses_an_entry_with_no_frame(tmp_path, capsys):
+    code = main(
+        ["send", "song_01", "--address", "AA:BB", "--evidence-dir", str(tmp_path)],
+        backend=FakeBackend(),
+        authorization=None,
+    )
+    assert code == 1
+    assert "unlocated" in capsys.readouterr().err
+
+
+def test_send_refuses_an_unknown_id(tmp_path, capsys):
+    code = main(
+        ["send", "no_such_command", "--dry-run", "--evidence-dir", str(tmp_path)],
+        backend=FakeBackend(),
+        authorization=None,
+    )
+    assert code == 1
+    assert "no_such_command" in capsys.readouterr().err
+
+
+def test_send_refuses_an_out_of_range_parameter(tmp_path, capsys):
+    backend = FakeBackend()
+    code = main(
+        [
+            "send",
+            "volume_set",
+            "--param",
+            "level=9",
+            "--address",
+            "AA:BB",
+            "--evidence-dir",
+            str(tmp_path),
+        ],
+        backend=backend,
+        authorization=None,
+    )
+    assert code == 1
+    assert backend.sent == []
+    assert "0-2" in capsys.readouterr().err
+
+
+def test_send_requires_an_address_when_not_dry_running(tmp_path, capsys):
+    code = main(
+        ["send", "media_music", "--evidence-dir", str(tmp_path)],
+        backend=FakeBackend(),
+        authorization=None,
+    )
+    assert code == 1
+    assert "--address" in capsys.readouterr().err
+
+
+def test_raw_bypasses_the_table(tmp_path):
+    backend = FakeBackend()
+    main(
+        [
+            "send",
+            "--raw",
+            "01 02",
+            "--family",
+            "0xB6",
+            "--address",
+            "AA:BB",
+            "--evidence-dir",
+            str(tmp_path),
+        ],
+        backend=backend,
+        authorization=None,
+    )
+    assert backend.sent == [bytes([0xB6, 0x02, 0x01, 0x02, 0x03, 0xAA])]
+
+
+def test_raw_needs_a_family(tmp_path, capsys):
+    code = main(
+        ["send", "--raw", "01 02", "--dry-run", "--evidence-dir", str(tmp_path)],
+        backend=FakeBackend(),
+        authorization=None,
+    )
+    assert code == 1
+    assert "--family" in capsys.readouterr().err
+
+
+def test_a_transport_failure_exits_non_zero(tmp_path, capsys):
+    backend = FakeBackend(error=TransportError("robot is asleep"))
+    code = main(
+        ["send", "media_music", "--address", "AA:BB", "--evidence-dir", str(tmp_path)],
+        backend=backend,
+        authorization=None,
+    )
+    assert code == 1
+    assert "asleep" in capsys.readouterr().err
+
+
+def test_notifications_are_reported_and_logged(tmp_path, capsys):
+    backend = FakeBackend(notifications=[b"\xaa\xbb"])
+    main(
+        ["send", "media_music", "--address", "AA:BB", "--evidence-dir", str(tmp_path)],
+        backend=backend,
+        authorization=None,
+    )
+    assert "AA BB" in capsys.readouterr().out
+
+
+# --- confirm (U6) -----------------------------------------------------------
+
+
+@pytest.fixture
+def workspace(tmp_path):
+    """A throwaway copy of the real table plus an evidence directory."""
+    import shutil
+
+    from carle.table import default_table_path
+
+    table = tmp_path / "commands.yaml"
+    shutil.copy(default_table_path(), table)
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    return table, evidence_dir
+
+
+def send_then(workspace, *extra):
+    table, evidence_dir = workspace
+    main(
+        [
+            "send",
+            "media_music",
+            "--address",
+            "AA:BB",
+            *extra,
+            "--evidence-dir",
+            str(evidence_dir),
+            "--table",
+            str(table),
+        ],
+        backend=FakeBackend(),
+        authorization=None,
+    )
+
+
+def confirm(workspace, *extra, behavior="It played a song"):
+    table, evidence_dir = workspace
+    return main(
+        [
+            "confirm",
+            "media_music",
+            "--behavior",
+            behavior,
+            *extra,
+            "--evidence-dir",
+            str(evidence_dir),
+            "--table",
+            str(table),
+        ],
+        authorization=None,
+    )
+
+
+def status_of(table, entry_id="media_music"):
+    from carle.table import load_table as load
+
+    return next(e for e in load(table).entries if e.id == entry_id).status
+
+
+def test_a_send_then_confirm_promotes_the_entry(workspace):
+    table, _ = workspace
+    send_then(workspace)
+    assert confirm(workspace) == 0
+    assert status_of(table) == "confirmed"
+
+
+def test_the_promoted_entry_passes_the_invariant_suite(workspace):
+    from carle.table import load_table as load
+    from carle.table import validate_table
+
+    table, evidence_dir = workspace
+    send_then(workspace)
+    confirm(workspace)
+    problems = [
+        p
+        for p in validate_table(load(table), root=evidence_dir.parent)
+        if p.startswith("media_music")
+    ]
+    assert problems == []
+
+
+def test_the_promotion_records_the_parameters_that_were_sent(workspace):
+    from carle.table import load_table as load
+
+    table, _ = workspace
+    send_then(workspace, "--param", "index=3")
+    confirm(workspace)
+    entry = next(e for e in load(table).entries if e.id == "media_music")
+    assert entry.observed_parameters == {"index": 3}
+
+
+def test_confirm_refuses_without_a_log(workspace, capsys):
+    table, _ = workspace
+    assert confirm(workspace) == 1
+    assert status_of(table) == "decoded"
+    assert "no send log" in capsys.readouterr().err
+
+
+def test_confirm_refuses_a_raw_log(workspace, capsys):
+    table, evidence_dir = workspace
+    main(
+        [
+            "send",
+            "--raw",
+            "03 00",
+            "--family",
+            "0xB3",
+            "--address",
+            "AA:BB",
+            "--evidence-dir",
+            str(evidence_dir),
+            "--table",
+            str(table),
+        ],
+        backend=FakeBackend(),
+        authorization=None,
+    )
+    assert confirm(workspace) == 1
+    assert status_of(table) == "decoded"
+
+
+def test_confirm_refuses_when_the_entry_changed_after_the_observation(workspace, capsys):
+    import yaml
+
+    table, _ = workspace
+    send_then(workspace)
+    raw = yaml.safe_load(table.read_text("utf-8"))
+    for row in raw["commands"]:
+        if row["id"] == "media_music":
+            row["payload"] = ["0x09", "{index}"]
+    table.write_text(yaml.safe_dump(raw, sort_keys=False), "utf-8")
+
+    assert confirm(workspace) == 1
+    assert "changed after the observation" in capsys.readouterr().err
+
+
+def test_confirming_twice_is_refused(workspace, capsys):
+    send_then(workspace)
+    confirm(workspace)
+    assert confirm(workspace) == 1
+    assert "already confirmed" in capsys.readouterr().err
+
+
+def test_confirm_requires_a_behavior_description(workspace):
+    table, evidence_dir = workspace
+    with pytest.raises(SystemExit):
+        main(["confirm", "media_music", "--table", str(table)], authorization=None)
+
+
+def test_the_comment_header_survives_a_promotion(workspace):
+    table, _ = workspace
+    before = table.read_text("utf-8").split("commands:")[0]
+    send_then(workspace)
+    confirm(workspace)
+    after = table.read_text("utf-8").split("commands:")[0]
+    assert before == after
+
+
+def test_unrelated_entries_are_untouched_by_a_promotion(workspace):
+    import yaml
+
+    table, _ = workspace
+    before = {r["id"]: r for r in yaml.safe_load(table.read_text("utf-8"))["commands"]}
+    send_then(workspace)
+    confirm(workspace)
+    after = {r["id"]: r for r in yaml.safe_load(table.read_text("utf-8"))["commands"]}
+    for entry_id in before:
+        if entry_id != "media_music":
+            assert before[entry_id] == after[entry_id]
