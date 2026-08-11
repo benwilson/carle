@@ -1,0 +1,43 @@
+# Provenance for every file in official-docs/.
+#
+# tests/test_manifest.py fails if a file here has no entry, or if an entry has no
+# source URL and retrieval date. The point is that a reader can check any claim this
+# repository makes against the vendor material it came from.
+#
+# Fields:
+#   local_path      path relative to the repository root; omit when retrieval failed
+#   source_url      where it came from
+#   retrieved       ISO 8601 date it was fetched, or the date retrieval was attempted
+#   description     what it is
+#   capture         'verbatim' (byte-for-byte) or 'extracted' (values transcribed)
+#   retrieval_failed  set when the source could not be reached; local_path is omitted
+
+documents:
+  - local_path: official-docs/User-Manual.pdf
+    source_url: https://rukotoy.com/download-center/
+    retrieved: 2026-08-11
+    capture: verbatim
+    description: >-
+      Ruko Carle User Manual v2.0 — the first-party manual for the 1088, covering
+      controls, pairing, the Carle app, and the 2.4 GHz remote. Source of the JT_
+      BLE advertising name.
+
+  - local_path: official-docs/ruko-published-specifications.md
+    source_url: https://www.rukotoy.com/params/toys/ruko-1088-blue
+    retrieved: 2026-08-11
+    capture: extracted
+    description: >-
+      Ruko's published specifications for the 1088, transcribed from the vendor's
+      per-colour specification pages. Values only — the pages themselves were not
+      archived byte-for-byte. Additional source URLs are listed inside the file.
+
+  - source_url: https://d.ihunuo.com/app/psss
+    retrieved: 2026-08-11
+    retrieval_failed: >-
+      Connection refused (host 129.204.171.33, a Tencent Cloud address). This is the
+      URL Ruko's download center delegates to for both the iOS and Android builds of
+      the Carle app; it did not respond from the United States on the retrieval date.
+    description: >-
+      Vendor distribution endpoint for the Carle mobile app. Recorded because it is
+      the canonical source and because its unavailability is why the APK is pulled
+      from an Android device instead.

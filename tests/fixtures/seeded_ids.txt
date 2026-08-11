@@ -1,0 +1,59 @@
+# Snapshot of every id created when protocol/commands.yaml was first seeded.
+#
+# tests/test_table_invariants.py fails if one of these ids disappears from the table.
+# A capability that turns out to be unmappable is marked 'unlocated'; one that the
+# decompile shows merged or split keeps its id and gains 'superseded_by'. Neither is
+# deleted — a shrinking table looks complete for the wrong reason.
+#
+# Add to this file only when new VENDOR-PUBLISHED capabilities are seeded. Rows
+# discovered by the decompile carry provenance 'decompile' and do not belong here.
+
+move_forward
+move_backward
+turn_left
+turn_right
+slide_left
+slide_right
+
+song_01
+song_02
+song_03
+song_04
+song_05
+song_06
+song_07
+song_08
+song_09
+song_10
+
+dance_01
+dance_02
+dance_03
+dance_04
+dance_05
+dance_06
+dance_07
+dance_08
+
+gymnastic_01
+gymnastic_02
+
+story_01
+story_02
+story_03
+story_04
+
+voice_01
+voice_02
+voice_03
+voice_04
+voice_05
+voice_06
+voice_07
+voice_08
+voice_09
+voice_10
+voice_11
+voice_12
+voice_13
+voice_14

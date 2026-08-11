@@ -1,0 +1,367 @@
+# The single owner of every Ruko 1088 command entry and its verification state.
+#
+# docs/protocol-reference.md is GENERATED from this file — edit here, then run
+# `uv run python scripts/generate_reference.py`. tests/test_table_invariants.py
+# enforces every rule below and runs in CI.
+#
+# status:      unmapped  -> capability known, frame not yet searched for
+#              unlocated -> searched the decompiled app, frame not found
+#              decoded   -> frame derived from the app, never run on hardware
+#              confirmed -> issued via the CLI, robot response observed
+# provenance:  vendor-marketing -> row exists because Ruko published the capability
+#              decompile        -> row exists because the frame was found in the app
+#
+# A vendor-marketing row can never carry an encoding.
+
+coverage_note: |
+  Row set and status as of the first decompile of the Carle Android app (base.apk,
+  com.ihunuo.jtlrobot). Nothing here has touched a robot: every derived frame is
+  `decoded`, not `confirmed`.
+
+  What the decompile changed. The vendor's published capability counts do NOT map
+  one-to-one onto protocol commands. The app exposes a single trigger per media
+  category and lets the robot cycle internally, so the ten songs, eight dance tracks,
+  four stories and two gymnastic routines are four commands, not twenty-four. The
+  originals are retained as `unlocated` with `superseded_by` rather than deleted, so
+  the collapse stays traceable — and so they are already in place if the second payload
+  byte turns out to select an individual item. The app always sends 0 there; only
+  hardware can settle it.
+
+  Movement collapsed the same way: one parameterized command with an 8-way direction
+  field, not six directional commands.
+
+  The fourteen voice commands appear nowhere in the BLE layer. They look like onboard
+  speech recognition with no protocol surface at all, so they are `unlocated` — searched
+  for, not found — rather than awaiting a frame that may not exist.
+
+  Counts asserted by the invariant suite are floors, from Ruko's published
+  specifications: 6 movement, 10 songs, 8 dance tracks, 2 gymnastic routines, 4 stories,
+  14 voice commands. Superseded rows still count toward them.
+
+  Ruko also advertises "200 programmable commands by app". The decompile supports the
+  working interpretation that this is user-composed sequence capacity rather than
+  distinct opcodes: CustomControlActivity assembles sequences from the same command
+  family (0xB2). UNCONFIRMED.
+commands:
+- id: move_forward
+  capability: Walk forward
+  category: movement
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - move_rocker
+- id: move_backward
+  capability: Walk backward
+  category: movement
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - move_rocker
+- id: turn_left
+  capability: Turn left
+  category: movement
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - move_rocker
+- id: turn_right
+  capability: Turn right
+  category: movement
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - move_rocker
+- id: slide_left
+  capability: Slide left
+  category: movement
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - move_rocker
+- id: slide_right
+  capability: Slide right
+  category: movement
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - move_rocker
+- id: song_01
+  capability: Song 1 of 10 (title not yet identified)
+  category: song
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_music
+- id: song_02
+  capability: Song 2 of 10 (title not yet identified)
+  category: song
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_music
+- id: song_03
+  capability: Song 3 of 10 (title not yet identified)
+  category: song
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_music
+- id: song_04
+  capability: Song 4 of 10 (title not yet identified)
+  category: song
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_music
+- id: song_05
+  capability: Song 5 of 10 (title not yet identified)
+  category: song
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_music
+- id: song_06
+  capability: Song 6 of 10 (title not yet identified)
+  category: song
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_music
+- id: song_07
+  capability: Song 7 of 10 (title not yet identified)
+  category: song
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_music
+- id: song_08
+  capability: Song 8 of 10 (title not yet identified)
+  category: song
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_music
+- id: song_09
+  capability: Song 9 of 10 (title not yet identified)
+  category: song
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_music
+- id: song_10
+  capability: Song 10 of 10 (title not yet identified)
+  category: song
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_music
+- id: dance_01
+  capability: Dance track 1 of 8 (title not yet identified)
+  category: dance
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_dance
+- id: dance_02
+  capability: Dance track 2 of 8 (title not yet identified)
+  category: dance
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_dance
+- id: dance_03
+  capability: Dance track 3 of 8 (title not yet identified)
+  category: dance
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_dance
+- id: dance_04
+  capability: Dance track 4 of 8 (title not yet identified)
+  category: dance
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_dance
+- id: dance_05
+  capability: Dance track 5 of 8 (title not yet identified)
+  category: dance
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_dance
+- id: dance_06
+  capability: Dance track 6 of 8 (title not yet identified)
+  category: dance
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_dance
+- id: dance_07
+  capability: Dance track 7 of 8 (title not yet identified)
+  category: dance
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_dance
+- id: dance_08
+  capability: Dance track 8 of 8 (title not yet identified)
+  category: dance
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_dance
+- id: gymnastic_01
+  capability: Gymnastic routine 1 of 2 (name not yet identified)
+  category: gymnastic
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_gymnastics
+- id: gymnastic_02
+  capability: Gymnastic routine 2 of 2 (name not yet identified)
+  category: gymnastic
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_gymnastics
+- id: story_01
+  capability: Story 1 of 4 (title not yet identified)
+  category: story
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_story
+- id: story_02
+  capability: Story 2 of 4 (title not yet identified)
+  category: story
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_story
+- id: story_03
+  capability: Story 3 of 4 (title not yet identified)
+  category: story
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_story
+- id: story_04
+  capability: Story 4 of 4 (title not yet identified)
+  category: story
+  provenance: vendor-marketing
+  status: unlocated
+  superseded_by:
+  - media_story
+- id: voice_01
+  capability: Voice command 1 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_02
+  capability: Voice command 2 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_03
+  capability: Voice command 3 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_04
+  capability: Voice command 4 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_05
+  capability: Voice command 5 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_06
+  capability: Voice command 6 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_07
+  capability: Voice command 7 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_08
+  capability: Voice command 8 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_09
+  capability: Voice command 9 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_10
+  capability: Voice command 10 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_11
+  capability: Voice command 11 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_12
+  capability: Voice command 12 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_13
+  capability: Voice command 13 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: voice_14
+  capability: Voice command 14 of 14 (phrase not yet identified)
+  category: voice
+  provenance: vendor-marketing
+  status: unlocated
+- id: media_gymnastics
+  capability: Trigger the gymnastics routines
+  category: gymnastic
+  provenance: decompile
+  status: decoded
+  encoding: B3 02 00 00 00 AA
+  derivation: OtherActivity.onClick, R.id.ticao_btn — decompiled from base.apk (com.ihunuo.jtlrobot)
+- id: media_story
+  capability: Trigger the stories
+  category: story
+  provenance: decompile
+  status: decoded
+  encoding: B3 02 01 00 01 AA
+  derivation: OtherActivity.onClick, R.id.stroy_btn — decompiled from base.apk (com.ihunuo.jtlrobot)
+- id: media_dance
+  capability: Trigger the dance tracks
+  category: dance
+  provenance: decompile
+  status: decoded
+  encoding: B3 02 02 00 02 AA
+  derivation: OtherActivity.onClick, R.id.dance_btn — decompiled from base.apk (com.ihunuo.jtlrobot)
+- id: media_music
+  capability: Trigger the songs
+  category: song
+  provenance: decompile
+  status: decoded
+  encoding: B3 02 03 00 03 AA
+  derivation: OtherActivity.onClick, R.id.music_btn — decompiled from base.apk (com.ihunuo.jtlrobot)
+- id: volume_set
+  capability: Set volume; payload byte 2 cycles 0, 1, 2
+  category: system
+  provenance: decompile
+  status: decoded
+  encoding: B3 02 04 <level> <sum> AA
+  derivation: OtherActivity.onClick, R.id.voice_btn — decompiled from base.apk (com.ihunuo.jtlrobot)
+- id: move_rocker
+  capability: Drive movement and limbs; direction 1-8 counter-clockwise from RIGHT
+  category: movement
+  provenance: decompile
+  status: decoded
+  encoding: B6 06 <mode> <speed> <direction> <p3> <limb> <p5> <sum> AA
+  derivation: NormolContorlActivity.sendconmmde() — decompiled from base.apk (com.ihunuo.jtlrobot)
