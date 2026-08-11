@@ -911,3 +911,36 @@ commands:
       the byte picks which leg leads, from the left foot leading here — is not recorded as its own
       observation because it was an interpretation of these same sends rather than a separate watching;
       it fell over when mode 2 turned out not to step at all.
+- id: move_gyro
+  capability: Tilt-driven movement; same primitives as move_rocker on family 0xB5
+  category: movement
+  provenance: decompile
+  status: decoded
+  derivation: GirtryActivity.sendcommand() — decompiled from base.apk (com.ihunuo.jtlrobot). The gyro
+    screen streams this frame on a 100ms timer, driven by phone tilt and on-screen gestures; family
+    byte -75 = 0xB5, payload arr[2..6], checksum arr[7] = sum(arr[2..6]) & 0xFF, terminator arr[8]
+    = -86 = 0xAA.
+  family: '0xB5'
+  payload:
+  - '{mode}'
+  - '0x00'
+  - '{direction}'
+  - '{limb}'
+  - '{sway}'
+  parameters:
+    mode:
+      min: 0
+      max: 2
+      default: 0
+    direction:
+      min: 0
+      max: 4
+      default: 0
+    limb:
+      min: 0
+      max: 12
+      default: 0
+    sway:
+      min: 0
+      max: 2
+      default: 0

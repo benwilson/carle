@@ -1,8 +1,10 @@
 # Ruko 1088 — BLE Protocol Reference
 
-**Nothing in this document describes the protocol yet.** The structure below is in place and
-the command table is real, but every capability is still unmapped. See
-[`docs/method.md`](method.md) for how the missing content gets produced.
+The transport, the frame envelope and all four command families are documented from the
+official Android app. Three commands have since been run against a real robot — the movement
+frame across most of its parameter space — while the rest are `decoded` from the app and await
+hardware. The status column in the command table below says which is which, and
+[`docs/method.md`](method.md) describes how a capability crosses from one to the other.
 
 This document is partly generated. The command table is rendered from
 [`protocol/commands.yaml`](../protocol/commands.yaml) by
@@ -29,8 +31,15 @@ values and nothing else.
 Writes are split into chunks of at most twenty payload bytes, and the app waits for each
 write's callback before sending the next.
 
-**Not yet documented.** What the notify characteristic reports, and whether the robot sends
-anything unprompted. Nothing in the app's send path reads it back.
+**The notify characteristic carries no meaning the app defines.** On connecting, the app
+subscribes to `AE02` and installs a handler for value changes — but that handler passes the
+received bytes to a callback whose body is empty, and no screen overrides it. So the app
+enables notifications and then discards whatever arrives. This is consistent with the send
+side, which requests no response, and with our own sessions: every one of the send logs
+committed under [`evidence/`](../evidence/) recorded an empty notifications field, meaning the
+robot sent nothing back during any of those writes. Whether the robot is *capable* of
+notifying under some condition the app never triggers is unknown; what is settled is that the
+app neither expects nor reads inbound data.
 
 ## Frame format
 
@@ -57,7 +66,8 @@ Four families appear in the app, one per control screen:
 
 The checksum covers the payload only — not the family byte, not the length, not itself. The
 app computes it inline at each send site rather than in a shared helper, which is why the same
-arithmetic appears once per screen.
+arithmetic appears once per screen. All four families share this one envelope; they differ
+only in what their payload bytes mean.
 
 Movement frames (`0xB6`) carry six payload bytes:
 
@@ -126,9 +136,47 @@ minute held down with the idle routine suppressed throughout. That is not proof 
 dead — it may need a mode nothing here sets, or act on something with no outward sign — but
 it is a thorough negative result, and worth recording so the next person does not repeat it.
 
-**Not yet documented.** The gyro family's payload layout and the programmed-sequence format.
-Also unknown: how to stop the robot. Nothing decoded here halts anything, though the remote
-carries an unexamined centre key that may do it.
+Gyro frames (`0xB5`) carry five payload bytes and reuse the same primitives from a different
+screen — the tilt-controlled view, which streams a frame every 100 ms driven by phone
+orientation and pad gestures rather than by discrete button presses:
+
+| Byte | Meaning |
+|---|---|
+| 0 | mode — 1 steps, 2 slides, as in movement |
+| 1 | never written by this screen; always 0 |
+| 2 | direction — 1 left, 2 right, 3 forward, 4 backward, 0 neutral |
+| 3 | limb selector, 1-12 — the same twelve joints movement addresses |
+| 4 | sway — 1 sways at the waist, 2 pauses, 0 clears |
+
+Two things are worth flagging rather than smoothing over. The limb and waist bytes sit in the
+opposite order to the movement frame — here the limb selector is byte 3 and the waist-like
+byte is byte 4, where movement puts the waist at byte 3 and the limb at byte 4 — and the gyro
+screen drops the movement frame's sixth byte entirely. And the direction encoding is a plain
+1-4 (left/right/forward/back) rather than movement's 1-8 compass. Whether the robot interprets
+a `0xB5` direction the same way it interprets a `0xB6` one is a hardware question this
+decompile cannot answer; the table records only what the app writes, marked `decoded`.
+
+Programmed-sequence frames (`0xB2`) are the one family whose payload is not a fixed layout.
+The custom-control screen lets a user assemble an ordered list of actions and send them as a
+single frame, so the payload is a *variable-length list of one-byte action codes*:
+
+```
+[0]        0xB2
+[1]        N            how many action codes follow
+[2 .. N+1] codes        one byte each, the actions in order
+[N+2]      checksum      sum of the codes, truncated to 8 bits
+[N+3]      0xAA
+```
+
+The checksum and envelope are identical to every other family; only the length varies. The
+app's grid offers action codes 1 through 58, each a pre-programmed motion or pose, but what
+each code does is not something the decompile settles — the app binds a code to a grid icon
+and a resource, not to a description. This frame is **not** in the command table below: the
+table models fixed payloads with named parameters, and a variable-length code list does not
+fit that shape without a schema change. It is recorded here instead.
+
+**Not yet documented.** What each `0xB2` action code does, and how to stop the robot — nothing
+decoded here halts anything, though the remote carries an unexamined centre key that may do it.
 
 ## Audio channel
 
@@ -220,7 +268,7 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 > because nothing establishes a narrower one), and whether the other three media
 > categories address tracks the same way.
 
-**50 entries:** 44 unlocated, 3 decoded, 3 confirmed.
+**51 entries:** 44 unlocated, 4 decoded, 3 confirmed.
 
 ### Movement
 
@@ -233,6 +281,7 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 | `slide_left` | Slide left (superseded by move_rocker) | unlocated | — | — | — |
 | `slide_right` | Slide right (superseded by move_rocker) | unlocated | — | — | — |
 | `move_rocker` | Drive movement and limbs; direction 1-8 counter-clockwise from RIGHT | confirmed | `B6 06 00 00 00 00 00 00 00 AA` | 23 observed, 1 withdrawn — [see below](#move_rocker) | 206 sends logged |
+| `move_gyro` | Tilt-driven movement; same primitives as move_rocker on family 0xB5 | decoded | `B5 05 00 00 00 00 00 00 AA` | — | derived: `GirtryActivity.sendcommand() — decompiled from base.apk (com.ihunuo.jtlrobot). The gyro screen streams this frame on a 100ms timer, driven by phone tilt and on-screen gestures; family byte -75 = 0xB5, payload arr[2..6], checksum arr[7] = sum(arr[2..6]) & 0xFF, terminator arr[8] = -86 = 0xAA.` |
 
 Parameters. The frame above is shown at each parameter's default.
 
@@ -244,6 +293,10 @@ Parameters. The frame above is shown at each parameter's default.
 | `move_rocker` | `p3` | 0–2 | 0 |
 | `move_rocker` | `limb` | 0–12 | 0 |
 | `move_rocker` | `p5` | 0–255 | 0 |
+| `move_gyro` | `mode` | 0–2 | 0 |
+| `move_gyro` | `direction` | 0–4 | 0 |
+| `move_gyro` | `limb` | 0–12 | 0 |
+| `move_gyro` | `sway` | 0–2 | 0 |
 
 ### Songs
 

@@ -157,6 +157,7 @@ STORED_LITERAL_FRAMES = {
 STORED_TEMPLATES = {
     "volume_set": "B3 02 04 <level> <sum> AA",
     "move_rocker": "B6 06 <mode> <speed> <direction> <p3> <limb> <p5> <sum> AA",
+    "move_gyro": "B5 05 <mode> 00 <direction> <limb> <sway> <sum> AA",
 }
 
 
