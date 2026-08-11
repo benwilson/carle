@@ -9,24 +9,27 @@ documentation and to keep it honest.
 
 ## Status
 
-The transport and frame format are documented from the official Android app. **No command has
-been run against a robot yet** — every derived frame is marked `decoded`, not `confirmed`.
+The transport and frame format are documented from the official Android app, and one hardware
+session has since exercised three of the six derived frames — the movement command across most
+of its parameter space.
 
 | Area | State |
 |---|---|
 | BLE service and characteristic UUIDs | Documented |
 | Command frame format | Documented |
-| Command encodings | 6 decoded from the app, 0 confirmed on hardware |
+| Command encodings | 6 derived from the app; 3 confirmed on hardware |
+| Hardware observations | 28 across 3 commands, backed by 210 committed send logs |
 | Notify characteristic contents | Not documented |
 | Audio channel | Not documented |
 | CLI scan / connect / info | Working |
 | Sending commands | Working |
 | Promoting a command on evidence | Working |
 
-What unblocks the rest is a session with a real robot. The tooling is ready:
-`carle send` issues a documented frame and records what it sent, and `carle confirm`
-promotes the entry from that record. [`docs/method.md`](docs/method.md) walks through it.
-If you have the hardware, that document is the place to start.
+What remains is the gyro (`0xB5`) and programmed-sequence (`0xB2`) families, the notify
+characteristic, and the audio channel. `carle send` issues a documented frame and records what
+it sent; `carle confirm` appends an observation to the entry from that record.
+[`docs/method.md`](docs/method.md) walks through it. If you have the hardware, that document
+is the place to start.
 
 ### What the first decompile changed
 

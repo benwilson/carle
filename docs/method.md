@@ -122,10 +122,17 @@ than a few seconds after your send is probably its own idea. Describe what you s
 immediately, and say so if the timing was loose — a wrong attribution here is worse than a
 thin one, because it reads as protocol behaviour forever after.
 
-`confirm` finds the most recent real send log for that command, rebuilds the entry at the
-parameters that log recorded, and refuses if they no longer produce the same frame — the
-observation described a different command. On success it sets the status, your behavior
-description, the parameter values that were actually sent, and evidence pointing at the log.
+`confirm` finds the real send log for that command, rebuilds the entry at the parameters that
+log recorded, and refuses if they no longer produce the same frame — the observation described
+a different command. On success it **appends an observation**: your behaviour description, the
+parameter values that were actually sent, and the log they were sent from.
+
+An entry carries a list, not a single observation. A parameterized command is one frame
+spanning a whole space, so confirming it once describes a single point of that space — the
+movement command has two dozen observations, one per joint and mode. Confirming again adds
+another; it never overwrites what is already there. With more than one log to choose from,
+`confirm` refuses to guess and makes you name the one you watched with `--log`, and it refuses
+a log some observation already cites, because one send is one observation.
 
 Commit the log alongside the table change. The invariant suite resolves that path on a
 fresh checkout, so a promotion whose log is not committed fails for everyone else.
