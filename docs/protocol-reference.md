@@ -63,7 +63,7 @@ Movement frames (`0xB6`) carry six payload bytes:
 
 | Byte | Meaning |
 |---|---|
-| 0 | mode — 1 turns on the spot; 0 and 2 translate |
+| 0 | mode — affects gait; not characterised |
 | 1 | speed |
 | 2 | direction, 1-8 |
 | 3 | waist — 1 leans left, 2 returns upright |
@@ -74,10 +74,19 @@ Direction runs counter-clockwise from 1 at RIGHT, so 3 is UP, 5 is LEFT and 7 is
 meaning no movement. Setting a direction and a speed makes the robot move; it takes its steps
 and stops on its own.
 
-Byte 0 decides how the direction is applied. At 1 the robot rotates on the spot; at 0 and 2 it
-travels. The app writes 1 or 2 and never 0, which matches the vendor's 2.4 GHz remote — it
-carries two separate four-way pads, one marked with a walking figure and the other with
-rotation arrows.
+Byte 0 changes the gait, and beyond that it is **not characterised**. Every value tried moves
+the robot forward, so it does not choose between rotating and travelling. At 1 the robot takes
+a recognisable step leading with its left foot; at 2 it advances in smaller jerky increments.
+Three readings were attempted and two were withdrawn, so what is recorded here is the
+difference itself rather than an explanation of it.
+
+Settling this needs a measurement rather than a description — distance travelled over a fixed
+number of sends, compared between values. Watching from across a room does not distinguish
+gaits reliably, which is how the first two readings went wrong.
+
+The app writes 1 or 2 into this byte and never 0, and the vendor's 2.4 GHz remote carries two
+four-way pads. Whether those two facts are related is unestablished; a remote is a different
+radio, and a picture of a button is not a measurement.
 
 The limb selector takes twelve values arranged as six pairs, running left then right through
 each articulation. Odd values raise and even values return:

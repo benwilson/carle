@@ -87,10 +87,19 @@ Attribution is by the order the observer reported, which matched the order sent.
 | Parameters | What the robot did |
 |---|---|
 | `mode=0 direction=3 speed=50` | Walked forward. (Earlier session.) |
-| `mode=1 direction=3 speed=120` | Turned right, in place. |
-| `mode=2 direction=3 speed=120` | Walked forward. |
+| `mode=1 direction=3 speed=120` | Steps FORWARD, leading with the LEFT foot. An earlier reading of this as a turn in place was withdrawn by the observer and is wrong. Twenty sends at speed 120 settled it: the robot travels rather than rotating. |
+| `mode=2 direction=3 speed=120` | Moves forward in small jerky advances rather than recognisable steps. Twenty sends. No clear leading foot. |
 
-So the byte selects how `direction` is interpreted: 1 rotates on the spot, 0 and 2 translate.
-This was predicted before testing, from a photograph of the 2.4 GHz remote: it carries two
+NOT CHARACTERISED, after three attempts. What holds: every value tested moves the robot
+forward, so the byte does not choose between rotating and travelling. What does not hold: a
+first reading as rotate-versus-travel, withdrawn by the observer; and a leg-selector
+hypothesis from the left foot leading at mode 1, unsupported once mode 2 produced small jerky
+advances rather than a right-foot lead.
+
+The difference is real but too fine for eye observation across a room. What would settle it is
+a measurement rather than a description: mark a start line, run twenty sends at one mode,
+measure the distance travelled, repeat for the other. Distance per send is objective in a way
+that 'steps' versus 'jerks' is not. Retesting with a long run of sends, where displacement and facing diverge
+obviously. A rotation hypothesis was predicted before testing, from a photograph of the 2.4 GHz remote: it carries two
 four-way pads, one centred on a walking figure and the other on rotation arrows. The app
 writes 1 or 2 into this byte, which is the two pads.
