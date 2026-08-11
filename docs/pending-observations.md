@@ -88,18 +88,24 @@ Attribution is by the order the observer reported, which matched the order sent.
 |---|---|
 | `mode=0 direction=3 speed=50` | Walked forward. (Earlier session.) |
 | `mode=1 direction=3 speed=120` | Steps FORWARD, leading with the LEFT foot. An earlier reading of this as a turn in place was withdrawn by the observer and is wrong. Twenty sends at speed 120 settled it: the robot travels rather than rotating. |
-| `mode=2 direction=3 speed=120` | Moves forward in small jerky advances rather than recognisable steps. Twenty sends. No clear leading foot. |
+| `mode=2 direction=3 speed=120` | SLIDES forward — rolling, not stepping. Twenty sends. |
 
-NOT CHARACTERISED, after three attempts. What holds: every value tested moves the robot
-forward, so the byte does not choose between rotating and travelling. What does not hold: a
-first reading as rotate-versus-travel, withdrawn by the observer; and a leg-selector
-hypothesis from the left foot leading at mode 1, unsupported once mode 2 produced small jerky
-advances rather than a right-foot lead.
+RESOLVED: the byte selects the movement mode. At 1 the robot WALKS, taking recognisable steps
+and leading with the left foot. At 2 it SLIDES — rolling forward without stepping at all.
 
-The difference is real but too fine for eye observation across a room. What would settle it is
-a measurement rather than a description: mark a start line, run twenty sends at one mode,
-measure the distance travelled, repeat for the other. Distance per send is objective in a way
-that 'steps' versus 'jerks' is not. Retesting with a long run of sends, where displacement and facing diverge
+This lands on the vendor's own vocabulary. Ruko's copy describes 'walking and sliding in
+multiple directions', which is where the seeded rows `slide_left` and `slide_right` came from
+before anyone knew what sliding meant. It is this mode.
+
+Two earlier readings were wrong and are kept here for calibration. The first called mode 1 a
+rotation in place; the observer withdrew it, and twenty sends showed the robot travelling at
+both values. The second guessed the byte picked which leg leads, from the left foot leading at
+mode 1; that fell over when mode 2 turned out not to step at all. Stepping versus rolling is a
+qualitative difference rather than a judgement about gait, which is why this reading holds
+where those did not.
+
+mode 0 walked forward in an earlier session, so it appears to behave as walking, but it has
+not been compared against 1 and 2 directly. Retesting with a long run of sends, where displacement and facing diverge
 obviously. A rotation hypothesis was predicted before testing, from a photograph of the 2.4 GHz remote: it carries two
 four-way pads, one centred on a walking figure and the other on rotation arrows. The app
 writes 1 or 2 into this byte, which is the two pads.
