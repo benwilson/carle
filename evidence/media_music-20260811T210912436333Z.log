@@ -1,0 +1,10 @@
+kind: send
+entry: media_music
+frame: B3 02 03 01 04 AA
+parameters: index=1
+timestamp: 2026-08-11T21:09:12.436333Z
+platform: darwin
+peripheral: 5B4DDB82-BB32-D566-E1F9-212CE37BD9A7
+write: ok
+write_detail: write-without-response
+notifications: 

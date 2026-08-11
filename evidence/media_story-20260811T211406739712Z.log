@@ -1,0 +1,10 @@
+kind: send
+entry: media_story
+frame: B3 02 01 00 01 AA
+parameters: 
+timestamp: 2026-08-11T21:14:06.739712Z
+platform: darwin
+peripheral: 5B4DDB82-BB32-D566-E1F9-212CE37BD9A7
+write: ok
+write_detail: write-without-response
+notifications: 

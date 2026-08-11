@@ -448,13 +448,34 @@ def test_notifications_are_reported_and_logged(tmp_path, capsys):
 
 @pytest.fixture
 def workspace(tmp_path):
-    """A throwaway copy of the real table plus an evidence directory."""
+    """A throwaway copy of the real table plus an evidence directory.
+
+    `media_music` is reset to `decoded` in the copy. These tests exercise the promotion
+    path, and the real table's status is mutable — the first hardware session confirmed
+    that entry for real and broke every test here, which is a fixture coupled to live
+    data rather than a fixture that states its own preconditions.
+    """
     import shutil
+
+    import yaml
 
     from carle.table import default_table_path
 
     table = tmp_path / "commands.yaml"
     shutil.copy(default_table_path(), table)
+
+    raw = yaml.safe_load(table.read_text("utf-8"))
+    for row in raw["commands"]:
+        if row["id"] == "media_music":
+            row["status"] = "decoded"
+            for field in ("observed_behavior", "observed_parameters", "hardware_evidence"):
+                row.pop(field, None)
+    head = table.read_text("utf-8").split("\ncommands:")[0]
+    table.write_text(
+        head + "\n" + yaml.safe_dump({"commands": raw["commands"]}, sort_keys=False, width=96),
+        encoding="utf-8",
+    )
+
     evidence_dir = tmp_path / "evidence"
     evidence_dir.mkdir()
     return table, evidence_dir

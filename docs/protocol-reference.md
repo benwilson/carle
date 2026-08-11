@@ -87,18 +87,28 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 > capability counts, not from the protocol. It is not a complete list of
 > protocol commands.
 >
-> Row set and status as of the first decompile of the Carle Android app (base.apk,
-> com.ihunuo.jtlrobot). Nothing here has touched a robot: every derived frame is
-> `decoded`, not `confirmed`.
+> Row set and status as of the first hardware session (2026-08-11), following the first
+> decompile of the Carle Android app (base.apk, com.ihunuo.jtlrobot).
 >
-> What the decompile changed. The vendor's published capability counts do NOT map
-> one-to-one onto protocol commands. The app exposes a single trigger per media
-> category and lets the robot cycle internally, so the ten songs, eight dance tracks,
-> four stories and two gymnastic routines are four commands, not twenty-four. The
-> originals are retained as `unlocated` with `superseded_by` rather than deleted, so
-> the collapse stays traceable — and so they are already in place if the second payload
-> byte turns out to select an individual item. The app always sends 0 there; only
-> hardware can settle it.
+> Hardware corrected the decompile on two points.
+>
+> The second payload byte selects a track, and the app never uses it. Every send site in
+> the app hardcodes 0 there, so this was recorded as an open question — hardware settled
+> it: index 0, 1 and 2 each begin with a different song. Those tracks are reachable from
+> the protocol but not from the vendor's own app.
+>
+> The command starts playback rather than playing one track. After a send at index 2, a
+> further song played with no command sent. Whether the robot advances through a playlist
+> or the selected track is itself a medley is not yet distinguished, so the entry describes
+> what was observed rather than the mechanism behind it.
+>
+> What the decompile established, unchanged. The vendor's published capability counts do
+> not map one-to-one onto protocol commands: the app exposes a single trigger per media
+> category, so the ten songs, eight dance tracks, four stories and two gymnastic routines
+> are four parameterized commands rather than twenty-four. The originals are retained as
+> `unlocated` with `superseded_by` rather than deleted, so the collapse stays traceable.
+> Note this now reads differently than when it was written — the tracks ARE individually
+> addressable, just through one command's parameter rather than through separate commands.
 >
 > Movement collapsed the same way: one parameterized command with an 8-way direction
 > field, not six directional commands.
@@ -115,8 +125,13 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 > working interpretation that this is user-composed sequence capacity rather than
 > distinct opcodes: CustomControlActivity assembles sequences from the same command
 > family (0xB2). UNCONFIRMED.
+>
+> Open, and cheap to settle with the robot in hand: whether `index` wraps past the
+> published track count, what values above it do (the declared range is the full byte
+> because nothing establishes a narrower one), and whether the other three media
+> categories address tracks the same way.
 
-**50 entries:** 44 unlocated, 6 decoded.
+**50 entries:** 44 unlocated, 4 decoded, 2 confirmed.
 
 ### Movement
 
@@ -155,7 +170,7 @@ Parameters. The frame above is shown at each parameter's default.
 | `song_08` | Song 8 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
 | `song_09` | Song 9 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
 | `song_10` | Song 10 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
-| `media_music` | Trigger the songs | decoded | `B3 02 03 00 03 AA` | — | derived: `OtherActivity.onClick, R.id.music_btn — decompiled from base.apk (com.ihunuo.jtlrobot)` |
+| `media_music` | Trigger the songs | confirmed | `B3 02 03 00 03 AA` | Starts audio playback beginning at the track selected by `index`, and the robot continues past that track without a further command. Observed: index 0 began with "Old MacDonald Had a Farm", index 1 with the ABC song, index 2 with "We Wish You a Merry Christmas" — after which "If You're Happy and You Know It" played with no command sent. Dancing accompanied playback at index 1 and 2. Whether playback advances through a playlist or a single track is a medley is not yet distinguished. | [2026-08-11](../evidence/media_music-20260811T210822337016Z.log) |
 
 Parameters. The frame above is shown at each parameter's default.
 
@@ -205,7 +220,7 @@ Parameters. The frame above is shown at each parameter's default.
 | `story_02` | Story 2 of 4 (title not yet identified) (superseded by media_story) | unlocated | — | — | — |
 | `story_03` | Story 3 of 4 (title not yet identified) (superseded by media_story) | unlocated | — | — | — |
 | `story_04` | Story 4 of 4 (title not yet identified) (superseded by media_story) | unlocated | — | — | — |
-| `media_story` | Trigger the stories | decoded | `B3 02 01 00 01 AA` | — | derived: `OtherActivity.onClick, R.id.stroy_btn — decompiled from base.apk (com.ihunuo.jtlrobot)` |
+| `media_story` | Trigger the stories | confirmed | `B3 02 01 00 01 AA` | After a noticeable silent gap of roughly ten seconds, began narrating a story: 'The Princess and the Pea'. Sent at index 0 from a quiet robot. Confirms the decompiled category mapping — OtherActivity's stroy_btn writes payload byte 0x01. | [2026-08-11](../evidence/media_story-20260811T211406739712Z.log) |
 
 Parameters. The frame above is shown at each parameter's default.
 
