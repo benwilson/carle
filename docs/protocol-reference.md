@@ -31,10 +31,13 @@ app reads at startup and hands to its command manager. That indirection is worth
 sibling app from the same publisher could ship a different robot by changing three manifest
 values and nothing else.
 
-Writes are split into chunks of at most twenty payload bytes, and the app waits for each
-write's callback before sending the next. Control frames go out as writes *without* response —
-the fire-and-forget kind — while the firmware-update path uses acknowledged writes. The app
-never negotiates a larger MTU, so the twenty-byte chunk size is fixed rather than tuned.
+The control characteristic accepts writes without pairing or bonding: the app connects with a
+plain `connectGatt` and issues no bond request, no PIN, and no encryption anywhere in its code,
+so a client needs only the connection to write. Writes are split into chunks of at most twenty
+payload bytes, and the app waits for each write's callback before sending the next. Control
+frames go out as writes *without* response — the fire-and-forget kind — while the firmware-update
+path uses acknowledged writes. The app never negotiates a larger MTU, so the twenty-byte chunk
+size is fixed rather than tuned.
 
 **The notify characteristic carries no meaning the app defines.** On connecting, the app
 subscribes to `AE02` and installs a handler for value changes — but that handler passes the
@@ -191,24 +194,22 @@ single frame, so the payload is a *variable-length list of one-byte action codes
 ```
 
 The checksum and envelope are identical to every other family; only the length varies. The
-app's grid offers action codes 1 through 58. The app binds each code to a grid icon rather than
-to a description, so what a code makes the robot *do* is not settled here — but the icon
-resource names lay out a clear structure, and the codes pair odd-then-even the way the limb
-selector does:
+app's grid offers action codes 1 through 58, and the screen sorts them under five tabs of its
+own — the authoritative grouping, since these are the app's labels rather than a guess from
+artwork:
 
-| Codes | Icon group | Apparent meaning |
+| Codes | Tab | What the icon names suggest |
 |---|---|---|
-| 1-12 | `left1`-`left6` | the six left-side limb poses |
-| 13-24 | `right1`-`right6` | the six right-side limb poses |
-| 25-26 | `action_yao` | the waist sway |
-| 31-38 | `qianhuabu`, `houhuabu` | forward and backward slide-steps |
-| 39-48 | `smile1`-`smile5` | facial expressions |
-| 49-58 | `music1`-`music5` | music tracks |
+| 1-12 | Left hand | the six left-side limb poses |
+| 13-24 | Right hand | the six right-side limb poses |
+| 25-38 | Move | the waist sway (`action_yao`), forward and backward slide-steps (`qianhuabu`, `houhuabu`), and other locomotion |
+| 39-48 | Expression | facial expressions (`smile1`-`smile5`) |
+| 49-58 | Music | music tracks |
 
-That maps the sequence vocabulary onto the same repertoire the other families reach — the
-twelve limb joints, the waist, sliding, plus expressions and music the command table does not
-otherwise expose. It is inference from the app's artwork, not from watching the robot, so it is
-a map of what the codes are *named*, not proof of what they do.
+That maps the sequence vocabulary onto the same repertoire the other families reach — the limb
+joints, the waist, sliding, plus expressions and music the command table does not otherwise
+expose. The tab names are the app's own; what each individual code does on hardware is still not
+settled, since the app binds a code to an icon, not to a description.
 
 This frame is **not** in the command table below: the table models fixed payloads with named
 parameters, and a variable-length code list does not fit that shape without a schema change. It
@@ -260,9 +261,13 @@ The device's provenance runs through three names. The app is published by **iHun
 server (`d.ihunuo.com`) sit under this name. The hardware is made by **Guangdong Amwell Toys**
 (Chenghai, Shantou), which lists the same robot among its own remote-control models (the 18082,
 and 18081 variants). The retail brand is **Ruko**, sold in the US, whose parent files FCC grants
-under grantee code `2AXQL`. A
-reader chasing official documents or certifications will find them under one of these three, not
-under "Carle", which is only the app's display name.
+under grantee code `2AXQL`, and the app's privacy policy gives `rukodrone@gmail.com` as the
+contact. A reader chasing official documents or certifications will find them under one of these
+three, not under "Carle", which is only the app's display name.
+
+Everything in this reference is derived from **Carle version 5.6** (`com.ihunuo.jtlrobot`,
+versionCode 13, a release build). A later app version may move or add to what is described here;
+this is the artifact it was read from.
 
 ## Firmware update (OTA)
 
