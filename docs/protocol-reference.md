@@ -264,4 +264,11 @@ capability nobody investigated is indistinguishable from one that was hunted for
 and the table cannot honestly report what work remains.
 
 The rules are enforced by `tests/test_table_invariants.py` and run in CI, rather than being a
-convention this project promises to follow.
+convention this project promises to follow. The suite opens the cited log and checks it
+records the same frame the entry builds, so the strongest status in the table cannot be
+claimed by editing this repository's data by hand.
+
+One boundary worth stating plainly. The strongest claim here is that the tool issued
+exactly these bytes and a contributor reported what followed. Writes go out without
+requesting a response, so a successful send means the host's Bluetooth stack took the
+bytes — not that the robot received them — and the behavior column is a human report.

@@ -20,11 +20,13 @@ been run against a robot yet** — every derived frame is marked `decoded`, not 
 | Notify characteristic contents | Not documented |
 | Audio channel | Not documented |
 | CLI scan / connect / info | Working |
-| Sending commands | Not implemented |
+| Sending commands | Working |
+| Promoting a command on evidence | Working |
 
-What unblocks the rest: a session with a real robot, and a write path in the CLI.
-[`docs/method.md`](docs/method.md) describes the procedure. If you have the hardware, that
-document is the place to start.
+What unblocks the rest is a session with a real robot. The tooling is ready:
+`carle send` issues a documented frame and records what it sent, and `carle confirm`
+promotes the entry from that record. [`docs/method.md`](docs/method.md) walks through it.
+If you have the hardware, that document is the place to start.
 
 ### What the first decompile changed
 
@@ -62,6 +64,18 @@ uv run carle info <address-from-scan>
 `info` prints the peripheral's GATT services and characteristics exactly as discovered. That
 output is the raw material for documenting the service UUIDs — if you run it against a real
 1088, please open an issue with the result.
+
+To send a command, and then record what the robot did:
+
+```bash
+uv run carle send media_music --dry-run          # see the frame first
+uv run carle send media_music --address <address>
+uv run carle confirm media_music --behavior "Played a song"
+```
+
+A command is not documented until that second step has happened against real hardware.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for exactly what `confirmed` claims — and what it
+does not.
 
 ### macOS: grant Bluetooth permission first
 

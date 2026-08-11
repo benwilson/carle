@@ -11,14 +11,39 @@ Every row in [`protocol/commands.yaml`](protocol/commands.yaml) carries a `statu
 
 | Status | Meaning | Required fields |
 |---|---|---|
-| `unmapped` | Capability is known to exist; nobody has looked for its frame yet | no `encoding` |
-| `unlocated` | Searched the decompiled app; the frame was not found | no `encoding` |
-| `decoded` | Frame derived from the app, never run against hardware | `encoding`, `derivation` |
-| `confirmed` | Issued via the CLI and the robot's response was observed | `encoding`, `derivation`, `observed_behavior`, `hardware_evidence` |
+| `unmapped` | Capability is known to exist; nobody has looked for its frame yet | no `family` or `payload` |
+| `unlocated` | Searched the decompiled app; the frame was not found | no `family` or `payload` |
+| `decoded` | Frame derived from the app, never run against hardware | `family`, `payload`, `derivation` |
+| `confirmed` | Issued via the CLI and the robot's response was observed | the above plus `observed_behavior`, `observed_parameters`, `hardware_evidence` |
 
-`hardware_evidence` names a `date`, a `platform`, and a `log` path under `evidence/` that must
-actually exist. `tests/test_table_invariants.py` enforces every one of these rules, and CI runs
-it on each pull request. This is deliberate: a convention erodes, a test does not.
+The table stores a `family` byte and a `payload` template. Length, checksum and
+terminator are computed — never stored, so they cannot drift out of step with the
+payload. A payload item is a byte literal or a `{name}` reference resolved from a
+`parameters` block giving each name a range and a default.
+
+### What `confirmed` actually means
+
+**The CLI issued this exact frame, and a contributor reported the resulting behavior.**
+
+That is the whole claim, and it is worth stating plainly. The write is
+write-without-response, so a successful send means the host's Bluetooth stack accepted
+the bytes — not that the robot received them. `observed_behavior` is a human report with
+nothing mechanical behind it. What the tooling does guarantee is that the frame in the
+log is the frame the entry builds, that the log was written by a real send rather than a
+dry run, and that the log is committed where anyone can read it.
+
+`hardware_evidence` names a `date`, a `platform`, and a `log` path under `evidence/`. The
+invariant suite **opens that log** and requires it to name this entry, to be a real send
+rather than a dry run, and to record the frame the entry rebuilds at its observed
+parameters. Checking only that the file existed let anyone point at any non-empty file
+and pass every gate.
+
+`tests/test_table_invariants.py` enforces all of this, and CI runs it on each pull
+request — by name, and again without pytest at all. This is deliberate: a convention
+erodes, a test does not.
+
+Commit the send log with the promotion. The gate resolves the path on a fresh checkout,
+so an uncommitted log fails the build for everyone else.
 
 If you decode a frame but have no robot to test it against, mark it `decoded`. That is a real
 contribution and the honest label for it.

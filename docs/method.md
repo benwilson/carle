@@ -73,51 +73,63 @@ Static reading can be wrong. To check it:
 Compare the bytes on the wire against the frame you derived. If they disagree, the static
 reading was wrong, and the wire wins.
 
-## 4. Confirm against the robot
+## 4. Send it to the robot
 
-A frame is not documented until it has been sent to a real robot and the response observed.
-This is the step that separates this reference from a plausible guess.
+A frame is not documented until it has been sent to a real robot and the response
+observed. This is the step that separates this reference from a plausible guess.
 
 ```bash
 uv run carle scan
-uv run carle info <address>
+uv run carle send media_music --address <address-from-scan>
 ```
 
-`info` prints the peripheral's services and characteristics verbatim; that output is what the
-Transport section of the protocol reference is written from.
+`send` builds the frame from the table, writes it to the control characteristic, listens
+on the notify characteristic while it does, and records everything it sent to a log under
+[`evidence/`](../evidence/). You do not write that log; the tool does.
 
-Note there is currently no command that writes to the robot. Adding one is the first task once
-the frame format is known — until then there is nothing to send.
-
-## 5. Record the finding
-
-Edit [`protocol/commands.yaml`](../protocol/commands.yaml) — never the generated table in the
-reference document — then regenerate:
+Parameters come from repeated `--param`, range-checked against the table's declarations:
 
 ```bash
+uv run carle send volume_set --param level=2 --address <address>
+uv run carle send media_music --param index=3 --address <address>
+```
+
+That second one is the open question the decompile could not settle — whether the second
+payload byte selects an individual track. The app always sends 0. If a non-zero value
+changes which song plays, the twenty-four superseded media rows come back.
+
+Two escape hatches, both deliberately outside the evidence chain:
+
+```bash
+uv run carle send media_music --dry-run          # print the frame, touch nothing
+uv run carle send --raw "03 01" --family 0xB3 --address <address>
+```
+
+A dry run writes no log at all, and a raw send logs outside `evidence/`. Neither can
+support a promotion.
+
+## 5. Record what happened
+
+```bash
+uv run carle confirm media_music --behavior "Played a song and waved both arms"
 uv run python scripts/generate_reference.py
 uv run pytest
 ```
 
-Which fields an entry carries depends on how far it has been taken:
+`confirm` finds the most recent real send log for that command, rebuilds the entry at the
+parameters that log recorded, and refuses if they no longer produce the same frame — the
+observation described a different command. On success it sets the status, your behavior
+description, the parameter values that were actually sent, and evidence pointing at the log.
 
-| You have | Set status to | And record |
-|---|---|---|
-| A published capability, nothing else | `unmapped` | nothing further |
-| Searched the app, found no frame | `unlocated` | nothing further |
-| A frame from the app, untested | `decoded` | `encoding`, `derivation` |
-| A frame you sent and watched work | `confirmed` | `encoding`, `derivation`, `observed_behavior`, `hardware_evidence` |
+Commit the log alongside the table change. The invariant suite resolves that path on a
+fresh checkout, so a promotion whose log is not committed fails for everyone else.
 
-`hardware_evidence` names a date, the platform you ran from, and a `log` path under
-[`evidence/`](../evidence/). That file has to exist — the test suite resolves the path, so a
-placeholder string will not pass. Put whatever you actually captured in it: a snoop-log
-excerpt, terminal output, a note describing what the robot did.
+**`confirm` is convenience, not enforcement.** The invariant suite parses the cited log
+itself and re-derives the same judgement from the committed files, so hand-editing an
+entry to `confirmed` does not get past CI just because you skipped the CLI.
 
-Also set `provenance`. A row that exists because Ruko published a capability is
-`vendor-marketing` and can never carry an encoding; a row backed by a frame from the app is
-`decompile`. If the decompile shows a seeded capability was really several commands, or several
-were really one, keep the original id and add `superseded_by` naming the replacements. Deleting
-the row would make the table look more complete than it is.
+If you decode a frame but have no robot, stop at step 3 and record it as `decoded` with
+its `derivation`. That is a real contribution and the honest label for it.
 
 ## Scope
 
