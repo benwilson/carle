@@ -19,6 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from carle.frame import to_hex  # noqa: E402
 from carle.table import STATUSES, Table, load_table, repo_root  # noqa: E402
 
 BEGIN = "<!-- BEGIN GENERATED COMMAND TABLE -->"
@@ -80,10 +81,18 @@ def render(table: Table) -> str:
             continue
         lines.append(f"### {title}")
         lines.append("")
-        lines.append("| ID | Capability | Status | Encoding | Observed behavior | Evidence |")
+        lines.append("| ID | Capability | Status | Frame | Observed behavior | Evidence |")
         lines.append("|---|---|---|---|---|---|")
         for entry in entries:
-            encoding = f"`{cell(entry.encoding)}`" if entry.encoding else "—"
+            # Always a concrete frame, built at declared defaults. After the migration
+            # no row is fully literal, so rendering templates only for literal rows
+            # would publish a schema where the reader expects bytes.
+            encoding = "—"
+            if entry.has_frame:
+                try:
+                    encoding = f"`{cell(to_hex(entry.build_frame()))}`"
+                except Exception:  # noqa: BLE001 - a broken row is reported by the gate
+                    encoding = "_unbuildable_"
             observed = cell(entry.observed_behavior) if entry.observed_behavior else "—"
 
             evidence = "—"
@@ -106,6 +115,20 @@ def render(table: Table) -> str:
                 f"| {encoding} | {observed} | {evidence} |"
             )
         lines.append("")
+
+        parameterized = [e for e in entries if e.parameters]
+        if parameterized:
+            lines.append("Parameters. The frame above is shown at each parameter's default.")
+            lines.append("")
+            lines.append("| Command | Parameter | Range | Default |")
+            lines.append("|---|---|---|---|")
+            for entry in parameterized:
+                for name, spec in entry.parameters.items():
+                    lines.append(
+                        f"| `{cell(entry.id)}` | `{cell(name)}` "
+                        f"| {spec['min']}–{spec['max']} | {spec['default']} |"
+                    )
+            lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
 

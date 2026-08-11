@@ -36,13 +36,17 @@ VALID_ROW = {
     "status": "unmapped",
 }
 
+#: A frame that actually builds: family 0xB3, payload [0x03, 0x00].
+FRAME_FIELDS = {"family": "0xB3", "payload": ["0x03", "0x00"]}
+
 CONFIRMED_ROW = {
     **VALID_ROW,
+    **FRAME_FIELDS,
     "provenance": "decompile",
     "status": "confirmed",
-    "encoding": "AA0102",
     "derivation": "CommandBuilder.playSong",
     "observed_behavior": "Robot plays a song",
+    "observed_parameters": {},
 }
 
 
@@ -77,9 +81,37 @@ def problems_for(tmp_path: Path, rows: list[dict], **kwargs) -> list[str]:
     return validate_table(table, root=tmp_path, **kwargs)
 
 
-def evidence_log(tmp_path: Path, name: str = "song_01.log", body: str = "observed") -> str:
+def evidence_log(
+    tmp_path: Path,
+    name: str = "song_01.log",
+    body: str | None = None,
+    *,
+    entry_id: str = "song_01",
+    kind: str = "send",
+    frame_hex: str = "B3 02 03 00 03 AA",
+    parameters: str = "",
+    write: str = "ok",
+) -> str:
+    """Write a log the gate will actually accept, unless a test asks otherwise.
+
+    The gate now parses this file, so a placeholder string is no longer enough — which
+    is the whole point of the rule.
+    """
     directory = tmp_path / "evidence"
     directory.mkdir(exist_ok=True)
+    if body is None:
+        body = (
+            f"kind: {kind}\n"
+            f"entry: {entry_id}\n"
+            f"frame: {frame_hex}\n"
+            f"parameters: {parameters}\n"
+            "timestamp: 2026-08-11T12:00:00.000000Z\n"
+            "platform: darwin\n"
+            "peripheral: AA:BB:CC:DD:EE:FF\n"
+            f"write: {write}\n"
+            "write_detail: \n"
+            "notifications: \n"
+        )
     (directory / name).write_text(body, encoding="utf-8")
     return f"evidence/{name}"
 
@@ -97,19 +129,19 @@ def test_real_table_passes_every_invariant():
     assert validate_table(table, seeded_ids=load_seeded_ids()) == []
 
 
-def test_no_encoding_outlives_its_provenance():
+def test_no_frame_outlives_its_provenance():
     """Replaces the earlier "no encodings exist yet" guard, which the first decompile
     retired by design. The durable rule is the one that still holds: bytes may only
     come from the app, never from a row seeded out of vendor marketing copy."""
     table = load_table()
-    fabricated = [e.id for e in table.entries if e.has_encoding and e.provenance != "decompile"]
+    fabricated = [e.id for e in table.entries if e.has_frame and e.provenance != "decompile"]
     assert fabricated == []
 
 
 def test_every_encoded_row_records_where_it_came_from():
     """R11 in miniature: a frame with no derivation cannot be reproduced or checked."""
     table = load_table()
-    undocumented = [e.id for e in table.entries if e.has_encoding and not e.derivation]
+    undocumented = [e.id for e in table.entries if e.has_frame and not e.derivation]
     assert undocumented == []
 
 
@@ -138,7 +170,7 @@ def test_confirmed_without_hardware_evidence_fails(tmp_path):
     assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
 
 
-@pytest.mark.parametrize("field", ["encoding", "derivation", "observed_behavior"])
+@pytest.mark.parametrize("field", ["payload", "derivation", "observed_behavior"])
 def test_confirmed_missing_any_required_field_fails(tmp_path, field):
     row = {**CONFIRMED_ROW, field: None}
     row["hardware_evidence"] = {
@@ -149,10 +181,10 @@ def test_confirmed_missing_any_required_field_fails(tmp_path, field):
     assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
 
 
-@pytest.mark.parametrize("field", ["encoding", "derivation", "observed_behavior"])
+@pytest.mark.parametrize("field", ["payload", "derivation", "observed_behavior"])
 def test_confirmed_with_an_empty_string_field_fails(tmp_path, field):
-    """An empty string satisfied the old `is None` check while rendering as nothing."""
-    row = {**CONFIRMED_ROW, field: ""}
+    """An empty value satisfied the old `is None` check while rendering as nothing."""
+    row = {**CONFIRMED_ROW, field: [] if field == "payload" else ""}
     row["hardware_evidence"] = {
         "date": "2026-08-11",
         "platform": "macOS",
@@ -165,9 +197,9 @@ def test_decoded_carrying_hardware_evidence_fails(tmp_path):
     """Hardware evidence means the entry is confirmed, not decoded."""
     row = {
         **VALID_ROW,
+        **FRAME_FIELDS,
         "provenance": "decompile",
         "status": "decoded",
-        "encoding": "AA0102",
         "derivation": "CommandBuilder.playSong",
         "hardware_evidence": {
             "date": "2026-08-11",
@@ -178,15 +210,15 @@ def test_decoded_carrying_hardware_evidence_fails(tmp_path):
     assert "state.decoded-evidence" in codes(problems_for(tmp_path, [row]))
 
 
-@pytest.mark.parametrize("field", ["encoding", "derivation"])
+@pytest.mark.parametrize("field", ["payload", "derivation"])
 def test_decoded_missing_a_required_field_fails(tmp_path, field):
     row = {
         **VALID_ROW,
+        **FRAME_FIELDS,
         "provenance": "decompile",
         "status": "decoded",
-        "encoding": "AA0102",
         "derivation": "CommandBuilder.playSong",
-        field: "",
+        field: [] if field == "payload" else "",
     }
     assert "state.decoded-missing" in codes(problems_for(tmp_path, [row]))
 
@@ -281,9 +313,9 @@ def test_evidence_missing_platform_fails(tmp_path):
 
 
 @pytest.mark.parametrize("status", ["unmapped", "unlocated"])
-@pytest.mark.parametrize("field", ["encoding", "derivation", "observed_behavior"])
+@pytest.mark.parametrize("field", ["payload", "derivation", "observed_behavior"])
 def test_unearned_status_carrying_content_fails(tmp_path, status, field):
-    row = {**VALID_ROW, "status": status, field: "something"}
+    row = {**VALID_ROW, "status": status, field: ["0x00"] if field == "payload" else "something"}
     assert "state.unearned" in codes(problems_for(tmp_path, [row]))
 
 
@@ -310,8 +342,8 @@ def test_vendor_marketing_row_cannot_carry_an_encoding(tmp_path):
     """A marketing row describes a capability; only the decompile produces an encoding."""
     row = {
         **VALID_ROW,
+        **FRAME_FIELDS,
         "status": "decoded",
-        "encoding": "AA0102",
         "derivation": "CommandBuilder.playSong",
     }
     assert "provenance.marketing-encoding" in codes(problems_for(tmp_path, [row]))
@@ -434,3 +466,95 @@ def test_malformed_yaml_is_rejected(tmp_path):
     )
     with pytest.raises(TableError, match="not valid YAML"):
         load_table(path)
+
+
+# --- The gate parses the log (AE9, KTD9) ------------------------------------
+#
+# A path-existence check let anyone hand-edit an entry to `confirmed`, point at any
+# non-empty file in evidence/, and watch every CI step pass. These are the tests that
+# make the rule real: none of them runs `carle confirm`.
+
+
+def test_a_matching_log_passes(tmp_path):
+    log = evidence_log(tmp_path)
+    problems = [p for p in _confirmed_with_log(tmp_path, log) if p.startswith("song_01")]
+    assert problems == []
+
+
+def test_a_dry_run_log_is_not_evidence(tmp_path):
+    """Dry runs never write to evidence/, but a hand-placed one must still be caught."""
+    log = evidence_log(tmp_path, kind="raw")
+    assert "evidence.log-shape" in codes(_confirmed_with_log(tmp_path, log))
+
+
+def test_a_log_naming_another_entry_is_rejected(tmp_path):
+    log = evidence_log(tmp_path, entry_id="dance_01")
+    assert "evidence.log-shape" in codes(_confirmed_with_log(tmp_path, log))
+
+
+def test_a_log_recording_a_different_frame_is_rejected(tmp_path):
+    log = evidence_log(tmp_path, frame_hex="B3 02 01 00 01 AA")
+    assert "evidence.log-shape" in codes(_confirmed_with_log(tmp_path, log))
+
+
+def test_a_log_recording_a_failed_write_is_rejected(tmp_path):
+    log = evidence_log(tmp_path, write="failed")
+    assert "evidence.log-shape" in codes(_confirmed_with_log(tmp_path, log))
+
+
+def test_a_log_whose_parameters_disagree_with_the_entry_is_rejected(tmp_path):
+    """The frame matches only because the entry was rebuilt at the wrong parameters."""
+    log = evidence_log(tmp_path, parameters="index=0")
+    problems = _confirmed_with_log(tmp_path, log)
+    assert "evidence.log-shape" in codes(problems)
+
+
+def test_an_unparseable_log_is_rejected(tmp_path):
+    log = evidence_log(tmp_path, body="I definitely tested this, trust me\n")
+    assert "evidence.log-shape" in codes(_confirmed_with_log(tmp_path, log))
+
+
+# --- Frame rules ------------------------------------------------------------
+
+
+def test_an_undocumented_family_is_rejected(tmp_path):
+    row = {
+        **VALID_ROW,
+        "provenance": "decompile",
+        "status": "decoded",
+        "family": "0xFF",
+        "payload": ["0x00"],
+        "derivation": "somewhere",
+    }
+    assert "frame.family" in codes(problems_for(tmp_path, [row]))
+
+
+def test_a_payload_referencing_an_undeclared_parameter_is_rejected(tmp_path):
+    row = {
+        **VALID_ROW,
+        "provenance": "decompile",
+        "status": "decoded",
+        "family": "0xB3",
+        "payload": ["0x00", "{index}"],
+        "derivation": "somewhere",
+    }
+    assert "frame.undeclared-parameter" in codes(problems_for(tmp_path, [row]))
+
+
+def test_a_declared_parameter_the_payload_ignores_is_rejected(tmp_path):
+    row = {
+        **VALID_ROW,
+        "provenance": "decompile",
+        "status": "decoded",
+        "family": "0xB3",
+        "payload": ["0x00"],
+        "derivation": "somewhere",
+        "parameters": {"index": {"min": 0, "max": 9, "default": 0}},
+    }
+    assert "frame.dead-parameter" in codes(problems_for(tmp_path, [row]))
+
+
+def test_an_unearned_row_carrying_family_zero_is_rejected(tmp_path):
+    """0x00 is falsy and legal, so a truthiness check would let it through."""
+    row = {**VALID_ROW, "family": "0x00"}
+    assert "state.unearned" in codes(problems_for(tmp_path, [row]))

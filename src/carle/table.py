@@ -14,6 +14,8 @@ from typing import Any
 
 import yaml
 
+from carle import frame
+
 STATUSES = ("unmapped", "unlocated", "decoded", "confirmed")
 PROVENANCES = ("vendor-marketing", "decompile")
 CATEGORIES = ("movement", "song", "dance", "gymnastic", "story", "voice", "system")
@@ -42,13 +44,17 @@ EVIDENCE_DIR = "evidence"
 
 _REQUIRED = ("id", "capability", "category", "provenance", "status")
 _OPTIONAL = (
-    "encoding",
+    "family",
+    "payload",
+    "parameters",
     "derivation",
     "observed_behavior",
+    "observed_parameters",
     "hardware_evidence",
     "superseded_by",
 )
 _EVIDENCE_FIELDS = ("date", "platform", "log")
+_PARAMETER_FIELDS = ("min", "max", "default")
 
 
 class TableError(Exception):
@@ -62,18 +68,33 @@ class Entry:
     category: str
     provenance: str
     status: str
-    encoding: str | None = None
+    family: int | None = None
+    payload: list[Any] | None = None
+    parameters: dict[str, dict[str, Any]] | None = None
     derivation: str | None = None
     observed_behavior: str | None = None
+    observed_parameters: dict[str, int] | None = None
     hardware_evidence: dict[str, Any] | None = None
     superseded_by: list[str] | None = None
 
     @property
-    def has_encoding(self) -> bool:
-        # Truthiness, not `is not None`: an empty string is an absent encoding, and
-        # treating it as present let a `decoded` row satisfy its own requirement while
-        # rendering with no bytes at all.
-        return bool(self.encoding)
+    def has_frame(self) -> bool:
+        """Whether this entry carries protocol bytes at all.
+
+        Explicitly `is not None` on the family and a length check on the payload,
+        never truthiness: `family: 0x00` and `payload: []` are both falsy and both
+        legal, so a truthiness test would let an unearned row carry `family: 0x00`
+        straight past the state rules.
+        """
+        return self.family is not None and bool(self.payload)
+
+    def resolved_payload(self, overrides: dict[str, int] | None = None) -> bytes:
+        return frame.resolve(self.payload or [], self.parameters, overrides)
+
+    def build_frame(self, overrides: dict[str, int] | None = None) -> bytes:
+        if not self.has_frame:
+            raise TableError(f"{self.id}: has no frame to build")
+        return frame.build(self.family, self.resolved_payload(overrides))
 
 
 @dataclass(frozen=True)
@@ -154,15 +175,46 @@ def _build_entry(row: Any, index: int, path: Path) -> Entry:
     if superseded_by is not None and not isinstance(superseded_by, list):
         raise TableError(f"{where} superseded_by must be a list of ids")
 
+    payload = row.get("payload")
+    if payload is not None and not isinstance(payload, list):
+        raise TableError(f"{where} payload must be a list of bytes and {{name}} references")
+
+    family = row.get("family")
+    if family is not None:
+        try:
+            family = frame.byte_literal(family)
+        except frame.FrameError as exc:
+            raise TableError(f"{where} family: {exc}") from exc
+
+    parameters = row.get("parameters")
+    if parameters is not None:
+        if not isinstance(parameters, dict):
+            raise TableError(f"{where} parameters must be a mapping of name to declaration")
+        for name, spec in parameters.items():
+            if not isinstance(spec, dict):
+                raise TableError(f"{where} parameter {name!r} must be a mapping")
+            missing_fields = [key for key in _PARAMETER_FIELDS if key not in spec]
+            if missing_fields:
+                raise TableError(
+                    f"{where} parameter {name!r} is missing {', '.join(missing_fields)}"
+                )
+
+    observed_parameters = row.get("observed_parameters")
+    if observed_parameters is not None and not isinstance(observed_parameters, dict):
+        raise TableError(f"{where} observed_parameters must be a mapping")
+
     return Entry(
         id=row["id"],
         capability=row["capability"],
         category=row["category"],
         provenance=row["provenance"],
         status=row["status"],
-        encoding=row.get("encoding"),
+        family=family,
+        payload=payload,
+        parameters=parameters,
         derivation=row.get("derivation"),
         observed_behavior=row.get("observed_behavior"),
+        observed_parameters=observed_parameters,
         hardware_evidence=evidence,
         superseded_by=superseded_by,
     )
@@ -175,16 +227,29 @@ def validate_entry(entry: Entry, *, root: Path | None = None) -> list[str]:
     unearned = entry.status in ("unmapped", "unlocated")
 
     # State rules. An entry may never claim more verification than its status earns.
-    # Every check is on truthiness: `encoding: ""` satisfied an `is None` test while
-    # rendering as no bytes, which is exactly the unearned claim these rules forbid.
+    # `family` is checked with `is not None` rather than truthiness because 0x00 is a
+    # legal byte; everything else is checked for emptiness, since an empty string or
+    # list is an absent value dressed up as a present one.
     if unearned:
-        for name in ("encoding", "derivation", "observed_behavior", "hardware_evidence"):
+        if entry.family is not None:
+            problems.append(
+                f"{entry.id}: [state.unearned] status '{entry.status}' must not carry family"
+            )
+        for name in (
+            "payload",
+            "derivation",
+            "observed_behavior",
+            "observed_parameters",
+            "hardware_evidence",
+        ):
             if getattr(entry, name):
                 problems.append(
                     f"{entry.id}: [state.unearned] status '{entry.status}' must not carry {name}"
                 )
     elif entry.status == "decoded":
-        for name in ("encoding", "derivation"):
+        if entry.family is None:
+            problems.append(f"{entry.id}: [state.decoded-missing] status 'decoded' requires family")
+        for name in ("payload", "derivation"):
             if not getattr(entry, name):
                 problems.append(
                     f"{entry.id}: [state.decoded-missing] status 'decoded' requires {name}"
@@ -195,21 +260,69 @@ def validate_entry(entry: Entry, *, root: Path | None = None) -> list[str]:
                 "hardware_evidence (hardware evidence means the entry is 'confirmed')"
             )
     elif entry.status == "confirmed":
-        for name in ("encoding", "derivation", "observed_behavior", "hardware_evidence"):
+        if entry.family is None:
+            problems.append(
+                f"{entry.id}: [state.confirmed-missing] status 'confirmed' requires family"
+            )
+        for name in ("payload", "derivation", "observed_behavior", "hardware_evidence"):
             if not getattr(entry, name):
                 problems.append(
                     f"{entry.id}: [state.confirmed-missing] status 'confirmed' requires {name}"
                 )
+        # `observed_parameters` is checked for presence, not emptiness: a command with
+        # no parameters legitimately records `{}`, and that is a real observation.
+        if entry.observed_parameters is None:
+            problems.append(
+                f"{entry.id}: [state.confirmed-missing] status 'confirmed' requires "
+                "observed_parameters"
+            )
 
     # Provenance rule. A row seeded from marketing copy describes a capability,
-    # never a protocol command, so it can never carry an encoding.
-    if entry.provenance == "vendor-marketing" and entry.has_encoding:
+    # never a protocol command, so it can never carry protocol bytes.
+    if entry.provenance == "vendor-marketing" and entry.has_frame:
         problems.append(
             f"{entry.id}: [provenance.marketing-encoding] provenance 'vendor-marketing' must "
-            "not carry an encoding; an encoding requires provenance 'decompile'"
+            "not carry protocol bytes; a frame requires provenance 'decompile'"
         )
 
+    problems.extend(_validate_frame(entry))
     problems.extend(_validate_evidence(entry, root))
+    return problems
+
+
+def _validate_frame(entry: Entry) -> list[str]:
+    """The frame must be buildable, and its parameters must line up with its payload."""
+    problems: list[str] = []
+    if entry.family is None and not entry.payload:
+        return problems
+
+    if entry.family is not None and entry.family not in frame.FAMILIES:
+        known = ", ".join(f"0x{f:02X}" for f in sorted(frame.FAMILIES))
+        problems.append(
+            f"{entry.id}: [frame.family] family 0x{entry.family:02X} is not one of the "
+            f"documented families ({known})"
+        )
+
+    declared = set(entry.parameters or {})
+    referenced = frame.referenced_parameters(entry.payload or [])
+
+    for name in sorted(referenced - declared):
+        problems.append(
+            f"{entry.id}: [frame.undeclared-parameter] payload references {{{name}}} "
+            "but no parameter declares it"
+        )
+    for name in sorted(declared - referenced):
+        problems.append(
+            f"{entry.id}: [frame.dead-parameter] parameter {name!r} is declared but the "
+            "payload never references it"
+        )
+
+    if not problems and entry.has_frame:
+        try:
+            entry.build_frame()
+        except (frame.FrameError, TableError) as exc:
+            problems.append(f"{entry.id}: [frame.unbuildable] {exc}")
+
     return problems
 
 
@@ -250,8 +363,56 @@ def _validate_evidence(entry: Entry, root: Path) -> list[str]:
 
     log = evidence.get("log")
     if log:
-        problems.extend(_validate_log_path(entry.id, str(log), root))
+        path_problems = _validate_log_path(entry.id, str(log), root)
+        problems.extend(path_problems)
+        if not path_problems:
+            problems.extend(_validate_log_contents(entry, root / str(log)))
 
+    return problems
+
+
+def _validate_log_contents(entry: Entry, path: Path) -> list[str]:
+    """Open the cited log and check it actually supports the claim.
+
+    This is the rule that makes the evidence mechanism real. Without it the gate
+    checks only that *some* non-empty file sits in ``evidence/``, so anyone can
+    hand-edit an entry to `confirmed`, point at a dry-run log, and watch every CI
+    step pass — the CLI's rules would be enforced only by running the CLI.
+    """
+    from carle import evidence as evidence_log  # local import: evidence imports frame, not table
+
+    prefix = f"{entry.id}: [evidence.log-shape]"
+    try:
+        log = evidence_log.read_log(path)
+    except evidence_log.EvidenceError as exc:
+        return [f"{prefix} {exc}"]
+
+    problems: list[str] = []
+    if log.kind != evidence_log.KIND_SEND:
+        problems.append(f"{prefix} log kind is {log.kind!r}; only a real send is evidence")
+    if log.entry_id != entry.id:
+        problems.append(f"{prefix} log names entry {log.entry_id!r}, not this one")
+    if not log.write_ok:
+        problems.append(f"{prefix} log records a failed write")
+
+    if problems or not entry.has_frame:
+        return problems
+
+    try:
+        expected = entry.build_frame(entry.observed_parameters or {})
+    except (frame.FrameError, TableError) as exc:
+        return [f"{prefix} entry cannot be rebuilt at its observed parameters: {exc}"]
+
+    if log.frame != expected:
+        problems.append(
+            f"{prefix} log records {frame.to_hex(log.frame)} but the entry rebuilds to "
+            f"{frame.to_hex(expected)}; the observation described a different frame"
+        )
+    if log.parameters != (entry.observed_parameters or {}):
+        problems.append(
+            f"{prefix} log was sent with {log.parameters or 'no parameters'} but the entry "
+            f"records {entry.observed_parameters or 'none'}"
+        )
     return problems
 
 

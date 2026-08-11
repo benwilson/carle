@@ -120,7 +120,7 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 
 ### Movement
 
-| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+| ID | Capability | Status | Frame | Observed behavior | Evidence |
 |---|---|---|---|---|---|
 | `move_forward` | Walk forward (superseded by move_rocker) | unlocated | — | — | — |
 | `move_backward` | Walk backward (superseded by move_rocker) | unlocated | — | — | — |
@@ -128,11 +128,22 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 | `turn_right` | Turn right (superseded by move_rocker) | unlocated | — | — | — |
 | `slide_left` | Slide left (superseded by move_rocker) | unlocated | — | — | — |
 | `slide_right` | Slide right (superseded by move_rocker) | unlocated | — | — | — |
-| `move_rocker` | Drive movement and limbs; direction 1-8 counter-clockwise from RIGHT | decoded | `B6 06 <mode> <speed> <direction> <p3> <limb> <p5> <sum> AA` | — | derived: `NormolContorlActivity.sendconmmde() — decompiled from base.apk (com.ihunuo.jtlrobot)` |
+| `move_rocker` | Drive movement and limbs; direction 1-8 counter-clockwise from RIGHT | decoded | `B6 06 00 00 00 00 00 00 00 AA` | — | derived: `NormolContorlActivity.sendconmmde() — decompiled from base.apk (com.ihunuo.jtlrobot)` |
+
+Parameters. The frame above is shown at each parameter's default.
+
+| Command | Parameter | Range | Default |
+|---|---|---|---|
+| `move_rocker` | `mode` | 0–2 | 0 |
+| `move_rocker` | `speed` | 0–255 | 0 |
+| `move_rocker` | `direction` | 0–8 | 0 |
+| `move_rocker` | `p3` | 0–2 | 0 |
+| `move_rocker` | `limb` | 0–12 | 0 |
+| `move_rocker` | `p5` | 0–255 | 0 |
 
 ### Songs
 
-| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+| ID | Capability | Status | Frame | Observed behavior | Evidence |
 |---|---|---|---|---|---|
 | `song_01` | Song 1 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
 | `song_02` | Song 2 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
@@ -146,9 +157,15 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 | `song_10` | Song 10 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
 | `media_music` | Trigger the songs | decoded | `B3 02 03 00 03 AA` | — | derived: `OtherActivity.onClick, R.id.music_btn — decompiled from base.apk (com.ihunuo.jtlrobot)` |
 
+Parameters. The frame above is shown at each parameter's default.
+
+| Command | Parameter | Range | Default |
+|---|---|---|---|
+| `media_music` | `index` | 0–255 | 0 |
+
 ### Dance tracks
 
-| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+| ID | Capability | Status | Frame | Observed behavior | Evidence |
 |---|---|---|---|---|---|
 | `dance_01` | Dance track 1 of 8 (title not yet identified) (superseded by media_dance) | unlocated | — | — | — |
 | `dance_02` | Dance track 2 of 8 (title not yet identified) (superseded by media_dance) | unlocated | — | — | — |
@@ -160,17 +177,29 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 | `dance_08` | Dance track 8 of 8 (title not yet identified) (superseded by media_dance) | unlocated | — | — | — |
 | `media_dance` | Trigger the dance tracks | decoded | `B3 02 02 00 02 AA` | — | derived: `OtherActivity.onClick, R.id.dance_btn — decompiled from base.apk (com.ihunuo.jtlrobot)` |
 
+Parameters. The frame above is shown at each parameter's default.
+
+| Command | Parameter | Range | Default |
+|---|---|---|---|
+| `media_dance` | `index` | 0–255 | 0 |
+
 ### Gymnastic routines
 
-| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+| ID | Capability | Status | Frame | Observed behavior | Evidence |
 |---|---|---|---|---|---|
 | `gymnastic_01` | Gymnastic routine 1 of 2 (name not yet identified) (superseded by media_gymnastics) | unlocated | — | — | — |
 | `gymnastic_02` | Gymnastic routine 2 of 2 (name not yet identified) (superseded by media_gymnastics) | unlocated | — | — | — |
 | `media_gymnastics` | Trigger the gymnastics routines | decoded | `B3 02 00 00 00 AA` | — | derived: `OtherActivity.onClick, R.id.ticao_btn — decompiled from base.apk (com.ihunuo.jtlrobot)` |
 
+Parameters. The frame above is shown at each parameter's default.
+
+| Command | Parameter | Range | Default |
+|---|---|---|---|
+| `media_gymnastics` | `index` | 0–255 | 0 |
+
 ### Stories
 
-| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+| ID | Capability | Status | Frame | Observed behavior | Evidence |
 |---|---|---|---|---|---|
 | `story_01` | Story 1 of 4 (title not yet identified) (superseded by media_story) | unlocated | — | — | — |
 | `story_02` | Story 2 of 4 (title not yet identified) (superseded by media_story) | unlocated | — | — | — |
@@ -178,9 +207,15 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 | `story_04` | Story 4 of 4 (title not yet identified) (superseded by media_story) | unlocated | — | — | — |
 | `media_story` | Trigger the stories | decoded | `B3 02 01 00 01 AA` | — | derived: `OtherActivity.onClick, R.id.stroy_btn — decompiled from base.apk (com.ihunuo.jtlrobot)` |
 
+Parameters. The frame above is shown at each parameter's default.
+
+| Command | Parameter | Range | Default |
+|---|---|---|---|
+| `media_story` | `index` | 0–255 | 0 |
+
 ### Voice commands
 
-| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+| ID | Capability | Status | Frame | Observed behavior | Evidence |
 |---|---|---|---|---|---|
 | `voice_01` | Voice command 1 of 14 (phrase not yet identified) | unlocated | — | — | — |
 | `voice_02` | Voice command 2 of 14 (phrase not yet identified) | unlocated | — | — | — |
@@ -199,9 +234,15 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 
 ### Device commands
 
-| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+| ID | Capability | Status | Frame | Observed behavior | Evidence |
 |---|---|---|---|---|---|
-| `volume_set` | Set volume; payload byte 2 cycles 0, 1, 2 | decoded | `B3 02 04 <level> <sum> AA` | — | derived: `OtherActivity.onClick, R.id.voice_btn — decompiled from base.apk (com.ihunuo.jtlrobot)` |
+| `volume_set` | Set volume; payload byte 2 cycles 0, 1, 2 | decoded | `B3 02 04 00 04 AA` | — | derived: `OtherActivity.onClick, R.id.voice_btn — decompiled from base.apk (com.ihunuo.jtlrobot)` |
+
+Parameters. The frame above is shown at each parameter's default.
+
+| Command | Parameter | Range | Default |
+|---|---|---|---|
+| `volume_set` | `level` | 0–2 | 0 |
 
 <!-- END GENERATED COMMAND TABLE -->
 

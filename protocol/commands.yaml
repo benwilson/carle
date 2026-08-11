@@ -328,40 +328,112 @@ commands:
   category: gymnastic
   provenance: decompile
   status: decoded
-  encoding: B3 02 00 00 00 AA
   derivation: OtherActivity.onClick, R.id.ticao_btn — decompiled from base.apk (com.ihunuo.jtlrobot)
+  family: '0xB3'
+  payload:
+  - '0x00'
+  - '{index}'
+  parameters:
+    index:
+      min: 0
+      max: 255
+      default: 0
 - id: media_story
   capability: Trigger the stories
   category: story
   provenance: decompile
   status: decoded
-  encoding: B3 02 01 00 01 AA
   derivation: OtherActivity.onClick, R.id.stroy_btn — decompiled from base.apk (com.ihunuo.jtlrobot)
+  family: '0xB3'
+  payload:
+  - '0x01'
+  - '{index}'
+  parameters:
+    index:
+      min: 0
+      max: 255
+      default: 0
 - id: media_dance
   capability: Trigger the dance tracks
   category: dance
   provenance: decompile
   status: decoded
-  encoding: B3 02 02 00 02 AA
   derivation: OtherActivity.onClick, R.id.dance_btn — decompiled from base.apk (com.ihunuo.jtlrobot)
+  family: '0xB3'
+  payload:
+  - '0x02'
+  - '{index}'
+  parameters:
+    index:
+      min: 0
+      max: 255
+      default: 0
 - id: media_music
   capability: Trigger the songs
   category: song
   provenance: decompile
   status: decoded
-  encoding: B3 02 03 00 03 AA
   derivation: OtherActivity.onClick, R.id.music_btn — decompiled from base.apk (com.ihunuo.jtlrobot)
+  family: '0xB3'
+  payload:
+  - '0x03'
+  - '{index}'
+  parameters:
+    index:
+      min: 0
+      max: 255
+      default: 0
 - id: volume_set
   capability: Set volume; payload byte 2 cycles 0, 1, 2
   category: system
   provenance: decompile
   status: decoded
-  encoding: B3 02 04 <level> <sum> AA
   derivation: OtherActivity.onClick, R.id.voice_btn — decompiled from base.apk (com.ihunuo.jtlrobot)
+  family: '0xB3'
+  payload:
+  - '0x04'
+  - '{level}'
+  parameters:
+    level:
+      min: 0
+      max: 2
+      default: 0
 - id: move_rocker
   capability: Drive movement and limbs; direction 1-8 counter-clockwise from RIGHT
   category: movement
   provenance: decompile
   status: decoded
-  encoding: B6 06 <mode> <speed> <direction> <p3> <limb> <p5> <sum> AA
   derivation: NormolContorlActivity.sendconmmde() — decompiled from base.apk (com.ihunuo.jtlrobot)
+  family: '0xB6'
+  payload:
+  - '{mode}'
+  - '{speed}'
+  - '{direction}'
+  - '{p3}'
+  - '{limb}'
+  - '{p5}'
+  parameters:
+    mode:
+      min: 0
+      max: 2
+      default: 0
+    speed:
+      min: 0
+      max: 255
+      default: 0
+    direction:
+      min: 0
+      max: 8
+      default: 0
+    p3:
+      min: 0
+      max: 2
+      default: 0
+    limb:
+      min: 0
+      max: 12
+      default: 0
+    p5:
+      min: 0
+      max: 255
+      default: 0

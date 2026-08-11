@@ -136,6 +136,9 @@ def parse_rows(generated: str) -> dict[str, list[str]]:
         if not line.startswith("| `"):
             continue
         cells = [c.strip() for c in CELL_SPLIT.split(line.strip())[1:-1]]
+        # The parameter tables share the leading "| `" shape but have four columns.
+        if len(cells) != 6:
+            continue
         rows[cells[0].strip("`")] = cells
     return rows
 
@@ -174,9 +177,11 @@ def test_confirmed_row_renders_its_observed_behavior(tmp_path):
             "category": "movement",
             "provenance": "decompile",
             "status": "confirmed",
-            "encoding": "AA0102",
+            "family": "0xB6",
+            "payload": ["0x01", "0x02"],
             "derivation": "CommandBuilder.walk",
             "observed_behavior": "Robot takes two steps forward",
+            "observed_parameters": {},
             "hardware_evidence": {
                 "date": "2026-08-11",
                 "platform": "macOS",
@@ -186,7 +191,7 @@ def test_confirmed_row_renders_its_observed_behavior(tmp_path):
     )
     body = render(load_table(path))
     assert "Robot takes two steps forward" in body
-    assert "`AA0102`" in body
+    assert "`B6 02 01 02 03 AA`" in body
 
 
 def test_evidence_links_resolve_from_the_docs_directory(tmp_path):
@@ -199,9 +204,11 @@ def test_evidence_links_resolve_from_the_docs_directory(tmp_path):
             "category": "movement",
             "provenance": "decompile",
             "status": "confirmed",
-            "encoding": "AA0102",
+            "family": "0xB6",
+            "payload": ["0x01", "0x02"],
             "derivation": "CommandBuilder.walk",
             "observed_behavior": "Robot takes two steps forward",
+            "observed_parameters": {},
             "hardware_evidence": {
                 "date": "2026-08-11",
                 "platform": "macOS",
@@ -235,7 +242,7 @@ def test_pipes_in_values_cannot_forge_columns(tmp_path):
         tmp_path,
         {
             "id": "move_forward",
-            "capability": "Walk forward | confirmed | `AA0102` | fake | fake",
+            "capability": "Walk forward | confirmed | `B6 02 01 02 03 AA` | fake | fake",
             "category": "movement",
             "provenance": "vendor-marketing",
             "status": "unmapped",
