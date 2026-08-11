@@ -24,3 +24,8 @@ btsnoop_hci.log
 
 # carle scratch (raw send logs are not evidence)
 .carle/
+
+# Vendor firmware images are not ours to redistribute
+ota.bin
+*.fw
+firmware/

@@ -13,8 +13,10 @@ generated markers — edit the YAML and regenerate.
 
 ## Transport
 
-The robot advertises over Bluetooth Low Energy under a name beginning `JT_`. Control uses a
-single vendor service with a write characteristic and a notify characteristic:
+The robot advertises over Bluetooth Low Energy under a name beginning `JT_`, and separately
+presents a Bluetooth audio sink named `JT_Speaker` (see [Audio channel](#audio-channel)) — the
+two names are how the app tells the control radio from the speaker. Control uses a single vendor
+service with a write characteristic and a notify characteristic:
 
 | Role | UUID |
 |---|---|
@@ -217,18 +219,39 @@ key that may do it.
 *Not documented.*
 
 The robot is understood to expose a Bluetooth audio sink separate from its BLE control link,
-pairable from ordinary system Bluetooth settings. **That understanding comes from a marketplace
-listing, not from vendor documentation or observation, and it has not been checked.** Whether
-the two channels are genuinely independent — and so whether a program can drive motion while
-audio plays — is an open question, and one of the more interesting ones.
+pairable from ordinary system Bluetooth settings, advertised as `JT_Speaker` where the control
+radio advertises as `JT_`. **That the two are independent comes from a marketplace listing and
+the two advertised names, not from vendor documentation or observation, and it has not been
+checked.** Whether a program can drive motion while audio plays — the question this answers — is
+one of the more interesting open ones.
+
+## Hardware
+
+The controller is a Realtek `RTL8763B`, a dual-mode Bluetooth SoC that carries both a BLE stack
+and a Bluetooth-audio (A2DP) sink on one part. That single chip explains the two radios above:
+the `JT_` control link and the `JT_Speaker` audio sink are the same silicon. The identification
+rests on three things that agree — the BLE module is FCC-certified as a Realtek modular grant
+(`TX2-RTL8763BA`), the firmware-update stack below is Realtek's own DFU profile, and the
+dual-mode BLE-plus-audio behaviour is what this SoC family is for. It has not been checked by
+reading the part off the board; opening the robot would settle it outright.
+
+The device's provenance runs through three names. The app is published by **iHunuo**
+(`com.ihunuo.jtlrobot`), which appears to be the software house — its BLE helper library and OTA
+server (`d.ihunuo.com`) sit under this name. The hardware is made by **Guangdong Amwell Toys**
+(Chenghai, Shantou), which lists the same robot among its own remote-control models (the 18082,
+and 18081 variants). The retail brand is **Ruko**, sold in the US, whose parent files FCC grants
+under grantee code `2AXQL`. A
+reader chasing official documents or certifications will find them under one of these three, not
+under "Carle", which is only the app's display name.
 
 ## Firmware update (OTA)
 
 The robot carries a second BLE surface, entirely separate from the control service, for
-updating its firmware. This is a Realtek-style DFU stack — the 128-bit UUID base
-`3C17-D293-8E48-14FE2E4DA212` and the opcode set below are that vendor's over-the-air profile.
-The whole of the following is derived from the decompiled app's `OTAClient` and `OTAUpdate`
-classes, not from hardware; nothing here has been run against a robot.
+updating its firmware. This is Realtek's DFU stack — the 128-bit UUID base
+`3C17-D293-8E48-14FE2E4DA212` and the opcode set below are that vendor's over-the-air profile,
+and the controller is a Realtek `RTL8763B` (see [Hardware](#hardware)). The whole of the
+following is derived from the decompiled app's `OTAClient` and `OTAUpdate` classes, not from
+hardware; nothing here has been run against a robot.
 
 Two services carry it. The **OTA interface** service `0000D0FF-3C17-D293-8E48-14FE2E4DA212`
 sits alongside the control service on the normal connection and exposes readable metadata plus
@@ -268,10 +291,12 @@ parameter, `4` operation failed, `5` data size exceeds, `6` CRC error.
 
 The firmware file itself opens with a 12-byte little-endian header — offset, signature,
 version, checksum, length (in 4-byte words), an OTA flag and a reserved byte — with the image
-data beginning at file offset 28. The transfer runs: enable notifications on the control point,
-start with the header, receive-image with the signature, stream the data in 20-byte units about
-15 ms apart, validate, then activate-and-reset. A failed validation triggers an immediate reset
-instead.
+data beginning at file offset 28. This is Realtek's BEE OTA image format; the `signature` field
+is a fixed image-identifier value that the transfer echoes back in the receive and validate
+steps, not a per-image cryptographic signature. The transfer runs: enable notifications on the
+control point, start with the header, receive-image with the signature, stream the data in
+20-byte units about 15 ms apart, validate, then activate-and-reset. A failed validation triggers
+an immediate reset instead.
 
 The app does not carry firmware in the package. It fetches a manifest from
 `http://d.ihunuo.com/api/v2/ota/{appID}?android-package-name={package}` — a real vendor
@@ -280,6 +305,17 @@ names. The app gates the flow on the battery read above, refusing to start below
 tells the user to keep the screen on while it runs. Both are the app's own behaviour, recorded
 here because a client re-implementing this path inherits the same constraints the hardware
 imposes.
+
+Two practical notes on obtaining an image. The `appID` is not set anywhere in the decompiled
+Android app — the whole OTA path is dormant library code the app never calls, so the URL it
+would build is `.../ota/null`. The download centre links the app itself as `/app/psss`, which
+makes `psss` the most likely `appID` to try in the manifest URL. And the host `d.ihunuo.com`
+resolves to a Tencent Cloud address in China that does not answer from outside the region — it
+timed out on every path and protocol tried — so fetching the manifest or image needs a network
+that can reach it. There is no public mirror: the Internet Archive holds no capture of the
+domain, and the official download centre carries only the app and the manual. The helper at
+[`tools/fw_probe.py`](../tools/fw_probe.py) queries the manifest and dissects a downloaded image
+using the header above, for whenever a reachable network or a device-side capture produces one.
 
 ## Autonomous behaviour
 
