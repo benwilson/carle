@@ -103,7 +103,13 @@ each articulation. Odd values raise and even values return:
 
 A limb holds its new position rather than springing back. Sending values in quick succession
 runs them in order, which is also the only practical way to watch one — the robot's idle
-routine resumes within a second or two and moves the same joints.
+routine resumes within a second or two and moves the same joints. Back-to-back sends deny that
+routine its window, which is how the negative result on byte 5 below was obtained.
+
+Eleven of the twelve values were watched directly. Value 2 was not: it is inferred as the
+left-arm return from the way 3 and 4 pair on the right. A log for it exists, but the
+observations table below carries no row for it, because an inference behind an evidence link
+reads like something someone saw.
 
 Nothing in the decompiled app explains these twelve numbers; it binds twelve on-screen buttons
 to them and stops there. The mapping above comes from watching the robot.
@@ -166,7 +172,9 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 > protocol commands.
 >
 > Row set and status as of the first hardware session (2026-08-11), following the first
-> decompile of the Carle Android app (base.apk, com.ihunuo.jtlrobot).
+> decompile of the Carle Android app (base.apk, com.ihunuo.jtlrobot). That session's
+> findings are recorded per observation on each entry rather than one per command: the
+> movement frame alone was watched at two dozen points of its parameter space.
 >
 > Hardware corrected the decompile on two points.
 >
@@ -216,7 +224,7 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 
 ### Movement
 
-| ID | Capability | Status | Frame | Observed behavior | Evidence |
+| ID | Capability | Status | Frame at defaults | Observations | Evidence |
 |---|---|---|---|---|---|
 | `move_forward` | Walk forward (superseded by move_rocker) | unlocated | — | — | — |
 | `move_backward` | Walk backward (superseded by move_rocker) | unlocated | — | — | — |
@@ -224,7 +232,7 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 | `turn_right` | Turn right (superseded by move_rocker) | unlocated | — | — | — |
 | `slide_left` | Slide left (superseded by move_rocker) | unlocated | — | — | — |
 | `slide_right` | Slide right (superseded by move_rocker) | unlocated | — | — | — |
-| `move_rocker` | Drive movement and limbs; direction 1-8 counter-clockwise from RIGHT | confirmed | `B6 06 00 32 03 00 00 00 35 AA` | Walked forward. Sent with mode at its default of 0, speed 50 and direction 3, which confirms the direction mapping derived from NormolContorlActivity (counter-clockwise from RIGHT=1, so 3 is up/forward) and shows that mode is not an enable — the app only ever writes 1 or 2 there, but 0 moves the robot. (sent at direction=3, speed=50) | [2026-08-11](../evidence/move_rocker-20260811T211646910616Z.log) |
+| `move_rocker` | Drive movement and limbs; direction 1-8 counter-clockwise from RIGHT | confirmed | `B6 06 00 00 00 00 00 00 00 AA` | 23 observed, 1 withdrawn — [see below](#move_rocker) | 206 sends logged |
 
 Parameters. The frame above is shown at each parameter's default.
 
@@ -239,7 +247,7 @@ Parameters. The frame above is shown at each parameter's default.
 
 ### Songs
 
-| ID | Capability | Status | Frame | Observed behavior | Evidence |
+| ID | Capability | Status | Frame at defaults | Observations | Evidence |
 |---|---|---|---|---|---|
 | `song_01` | Song 1 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
 | `song_02` | Song 2 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
@@ -251,7 +259,7 @@ Parameters. The frame above is shown at each parameter's default.
 | `song_08` | Song 8 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
 | `song_09` | Song 9 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
 | `song_10` | Song 10 of 10 (title not yet identified) (superseded by media_music) | unlocated | — | — | — |
-| `media_music` | Trigger the songs | confirmed | `B3 02 03 00 03 AA` | Selects a track by `index` and begins playing it. Observed: index 0 began with "Old MacDonald Had a Farm", index 1 with the ABC song, index 2 with "We Wish You a Merry Christmas". Dancing accompanied playback at every index observed, including 0. CONFOUNDED: further songs played minutes later with no command on the wire, which was first read as playback continuing on its own — but the robot is since known to enter pre-programmed idle behaviour unprompted, so that later content cannot be attributed to this command. Only the track each index STARTS with is established. | [2026-08-11](../evidence/media_music-20260811T210822337016Z.log) |
+| `media_music` | Trigger the songs | confirmed | `B3 02 03 00 03 AA` | 3 observed — [see below](#media_music) | 3 sends logged |
 
 Parameters. The frame above is shown at each parameter's default.
 
@@ -261,7 +269,7 @@ Parameters. The frame above is shown at each parameter's default.
 
 ### Dance tracks
 
-| ID | Capability | Status | Frame | Observed behavior | Evidence |
+| ID | Capability | Status | Frame at defaults | Observations | Evidence |
 |---|---|---|---|---|---|
 | `dance_01` | Dance track 1 of 8 (title not yet identified) (superseded by media_dance) | unlocated | — | — | — |
 | `dance_02` | Dance track 2 of 8 (title not yet identified) (superseded by media_dance) | unlocated | — | — | — |
@@ -281,7 +289,7 @@ Parameters. The frame above is shown at each parameter's default.
 
 ### Gymnastic routines
 
-| ID | Capability | Status | Frame | Observed behavior | Evidence |
+| ID | Capability | Status | Frame at defaults | Observations | Evidence |
 |---|---|---|---|---|---|
 | `gymnastic_01` | Gymnastic routine 1 of 2 (name not yet identified) (superseded by media_gymnastics) | unlocated | — | — | — |
 | `gymnastic_02` | Gymnastic routine 2 of 2 (name not yet identified) (superseded by media_gymnastics) | unlocated | — | — | — |
@@ -295,13 +303,13 @@ Parameters. The frame above is shown at each parameter's default.
 
 ### Stories
 
-| ID | Capability | Status | Frame | Observed behavior | Evidence |
+| ID | Capability | Status | Frame at defaults | Observations | Evidence |
 |---|---|---|---|---|---|
 | `story_01` | Story 1 of 4 (title not yet identified) (superseded by media_story) | unlocated | — | — | — |
 | `story_02` | Story 2 of 4 (title not yet identified) (superseded by media_story) | unlocated | — | — | — |
 | `story_03` | Story 3 of 4 (title not yet identified) (superseded by media_story) | unlocated | — | — | — |
 | `story_04` | Story 4 of 4 (title not yet identified) (superseded by media_story) | unlocated | — | — | — |
-| `media_story` | Trigger the stories | confirmed | `B3 02 01 00 01 AA` | After a noticeable silent gap of roughly ten seconds, began narrating a story: 'The Princess and the Pea'. Sent at index 0 from a quiet robot. Confirms the decompiled category mapping — OtherActivity's stroy_btn writes payload byte 0x01. | [2026-08-11](../evidence/media_story-20260811T211406739712Z.log) |
+| `media_story` | Trigger the stories | confirmed | `B3 02 01 00 01 AA` | 1 observed — [see below](#media_story) | 1 send logged |
 
 Parameters. The frame above is shown at each parameter's default.
 
@@ -311,7 +319,7 @@ Parameters. The frame above is shown at each parameter's default.
 
 ### Voice commands
 
-| ID | Capability | Status | Frame | Observed behavior | Evidence |
+| ID | Capability | Status | Frame at defaults | Observations | Evidence |
 |---|---|---|---|---|---|
 | `voice_01` | Voice command 1 of 14 (phrase not yet identified) | unlocated | — | — | — |
 | `voice_02` | Voice command 2 of 14 (phrase not yet identified) | unlocated | — | — | — |
@@ -330,7 +338,7 @@ Parameters. The frame above is shown at each parameter's default.
 
 ### Device commands
 
-| ID | Capability | Status | Frame | Observed behavior | Evidence |
+| ID | Capability | Status | Frame at defaults | Observations | Evidence |
 |---|---|---|---|---|---|
 | `volume_set` | Set volume; payload byte 2 cycles 0, 1, 2 | decoded | `B3 02 04 00 04 AA` | — | derived: `OtherActivity.onClick, R.id.voice_btn — decompiled from base.apk (com.ihunuo.jtlrobot)` |
 
@@ -339,6 +347,57 @@ Parameters. The frame above is shown at each parameter's default.
 | Command | Parameter | Range | Default |
 |---|---|---|---|
 | `volume_set` | `level` | 0–2 | 0 |
+
+### Observations
+
+What the robot did, per command and per parameter set. Each row is one
+behaviour watched on hardware; the frame shown is the one that was sent,
+not the default. A withdrawn row is a published reading that turned out to
+be wrong — kept, with its reason, so a reader can calibrate this document
+against its own error rate.
+
+#### `media_story`
+
+| Sent at | Frame | What the robot did | Logs |
+|---|---|---|---|
+| defaults | `B3 02 01 00 01 AA` | After a noticeable silent gap of roughly ten seconds, began narrating a story: 'The Princess and the Pea'. Sent at index 0 from a quiet robot. Confirms the decompiled category mapping — OtherActivity's stroy_btn writes payload byte 0x01. | [1](../evidence/media_story-20260811T211406739712Z.log) |
+
+#### `media_music`
+
+| Sent at | Frame | What the robot did | Logs |
+|---|---|---|---|
+| defaults | `B3 02 03 00 03 AA` | Began "Old MacDonald Had a Farm", with dancing. Sent at the declared default index, which the app itself hardcodes. | [1](../evidence/media_music-20260811T210822337016Z.log) |
+| index=1 | `B3 02 03 01 04 AA` | Began the ABC song, with dancing. | [1](../evidence/media_music-20260811T210912436333Z.log) |
+| index=2 | `B3 02 03 02 05 AA` | Began "We Wish You a Merry Christmas", with dancing. CONFOUNDED: further songs played minutes later with no command on the wire, first read as playback continuing on its own — but the robot is since known to enter pre-programmed idle behaviour unprompted, so that later content cannot be attributed to this command. Only the track each index STARTS with is established. | [1](../evidence/media_music-20260811T211055517492Z.log) |
+
+#### `move_rocker`
+
+| Sent at | Frame | What the robot did | Logs |
+|---|---|---|---|
+| direction=3, speed=50 | `B6 06 00 32 03 00 00 00 35 AA` | Walked forward. Sent with mode at its default of 0, speed 50 and direction 3, which confirms the direction mapping derived from NormolContorlActivity (counter-clockwise from RIGHT=1, so 3 is up/forward) and shows that mode is not an enable — the app only ever writes 1 or 2 there, but 0 moves the robot. | [1](../evidence/move_rocker-20260811T211646910616Z.log) |
+| limb=1 | `B6 06 00 00 00 00 01 00 01 AA` | Left arm raised, as though offering a handshake. The arm STAYS raised — these are poses, not gestures. | [1](../evidence/move_rocker-20260811T212202450866Z.log) |
+| limb=3 | `B6 06 00 00 00 00 03 00 03 AA` | Right arm raised to the same handshake position limb 1 gives the left. Read from alternating 3/4/3, which moved the arm up, down, up. | 4 sends, [1](../evidence/move_rocker-20260811T212322911335Z.log)…[4](../evidence/move_rocker-20260811T212354260482Z.log) |
+| limb=4 | `B6 06 00 00 00 00 04 00 04 AA` | The right-arm return. Read from the same 3/4/3 alternation. | [1](../evidence/move_rocker-20260811T212326061149Z.log), [2](../evidence/move_rocker-20260811T212350840245Z.log) |
+| limb=5 | `B6 06 00 00 00 00 05 00 05 AA` | LEFT SHOULDER — a lateral raise, described as flapping like a bird. Not the elbow: the distinction from 1/2 is the AXIS of motion, not how far the arm travels. Read from alternating 5/6/5. | [1](../evidence/move_rocker-20260811T212422432599Z.log), [2](../evidence/move_rocker-20260811T212429931981Z.log) |
+| limb=6 | `B6 06 00 00 00 00 06 00 06 AA` | The return for 5, from the same alternation. | [1](../evidence/move_rocker-20260811T212425792417Z.log) |
+| limb=7 | `B6 06 00 00 00 00 07 00 07 AA` | RIGHT SHOULDER — a lateral raise mirroring 5/6. Read from alternating 7/8 on a loop: the right arm lifts and lowers, flapping. | 10 sends, [1](../evidence/move_rocker-20260811T212522431769Z.log)…[10](../evidence/move_rocker-20260811T212736412740Z.log) |
+| limb=8 | `B6 06 00 00 00 00 08 00 08 AA` | The return for 7, from the same alternation. | 9 sends, [1](../evidence/move_rocker-20260811T212527172131Z.log)…[9](../evidence/move_rocker-20260811T212738783455Z.log) |
+| limb=9 | `B6 06 00 00 00 00 09 00 09 AA` | LEFT ELBOW — a bend at the forearm producing a handshake motion. Read from alternating 9/10. The side was not stated by the observer at the time; 11/12 settled it retroactively as the right, making this the left. | 6 sends, [1](../evidence/move_rocker-20260811T212759602817Z.log)…[6](../evidence/move_rocker-20260811T212828643188Z.log) |
+| limb=10 | `B6 06 00 00 00 00 0A 00 0A AA` | The return for 9, from the same alternation. | 6 sends, [1](../evidence/move_rocker-20260811T212803298165Z.log)…[6](../evidence/move_rocker-20260811T212832694009Z.log) |
+| limb=11 | `B6 06 00 00 00 00 0B 00 0B AA` | RIGHT ELBOW bend, mirroring 9/10 — which is what settles 9/10 as the left. Read from alternating 11/12. | 6 sends, [1](../evidence/move_rocker-20260811T212849553538Z.log)…[6](../evidence/move_rocker-20260811T212922492445Z.log) |
+| limb=12 | `B6 06 00 00 00 00 0C 00 0C AA` | The return for 11, from the same alternation. | 6 sends, [1](../evidence/move_rocker-20260811T212853663428Z.log)…[6](../evidence/move_rocker-20260811T212924893813Z.log) |
+| p3=1 | `B6 06 00 00 00 01 00 00 01 AA` | Leaned to the LEFT, bending slightly at the WAIST — a joint the limb selector does not reach. The lean holds. Follows the limb byte's convention: odd acts, even returns. | 10 sends, [1](../evidence/move_rocker-20260811T213139024791Z.log)…[10](../evidence/move_rocker-20260811T213253363924Z.log) |
+| p3=2 | `B6 06 00 00 00 02 00 00 02 AA` | Returned upright from the leaned position. The observer confirmed the command did this, not their hand. | 10 sends, [1](../evidence/move_rocker-20260811T213141306650Z.log)…[10](../evidence/move_rocker-20260811T213308874593Z.log) |
+| p5=1 | `B6 06 00 00 00 00 00 01 01 AA` | No movement of any kind. The byte the app never writes produces no observable effect. Also held for a full minute across 22 back-to-back sends, which suppressed the idle routine for the whole window — still nothing. | 36 sends, [1](../evidence/move_rocker-20260811T213350634876Z.log)…[36](../evidence/move_rocker-20260811T213916498028Z.log) |
+| p5=2 | `B6 06 00 00 00 00 00 02 02 AA` | No movement of any kind. The byte the app never writes produces no observable effect. | [1](../evidence/move_rocker-20260811T213355945737Z.log), [2](../evidence/move_rocker-20260811T213358735488Z.log) |
+| p5=3 | `B6 06 00 00 00 00 00 03 03 AA` | No movement of any kind. The byte the app never writes produces no observable effect. | [1](../evidence/move_rocker-20260811T213401044670Z.log), [2](../evidence/move_rocker-20260811T213403866085Z.log) |
+| p5=8 | `B6 06 00 00 00 00 00 08 08 AA` | No movement of any kind. The byte the app never writes produces no observable effect. | [1](../evidence/move_rocker-20260811T213407314727Z.log), [2](../evidence/move_rocker-20260811T213409534961Z.log) |
+| p5=64 | `B6 06 00 00 00 00 00 40 40 AA` | No movement of any kind. The byte the app never writes produces no observable effect. | [1](../evidence/move_rocker-20260811T213413704647Z.log), [2](../evidence/move_rocker-20260811T213416374417Z.log) |
+| p5=128 | `B6 06 00 00 00 00 00 80 80 AA` | No movement of any kind. The byte the app never writes produces no observable effect. | 8 sends, [1](../evidence/move_rocker-20260811T213420034830Z.log)…[8](../evidence/move_rocker-20260811T213602816015Z.log) |
+| p5=255 | `B6 06 00 00 00 00 00 FF FF AA` | No movement of any kind. The byte the app never writes produces no observable effect. Includes twelve alternations against p5=1, run to test whether this byte drove the LED face and ears; the display did not track the send rhythm, so the activity seen during the sweep is not attributable to it. | 14 sends, [1](../evidence/move_rocker-20260811T213426066177Z.log)…[14](../evidence/move_rocker-20260811T213723277884Z.log) |
+| direction=3, mode=1, speed=120 | `B6 06 01 78 03 00 00 00 7C AA` | WALKS forward, taking recognisable steps and leading with the LEFT foot. Read from 30 sends five seconds apart. | 30 sends, [1](../evidence/move_rocker-20260811T214307828193Z.log)…[30](../evidence/move_rocker-20260811T214632190630Z.log) |
+| direction=3, mode=2, speed=120 | `B6 06 02 78 03 00 00 00 7D AA` | SLIDES forward — rolling, without stepping at all. Read from 30 sends five seconds apart. This is the vendor's own 'sliding', which is where the seeded slide_left and slide_right rows came from before anyone knew what it meant. | 30 sends, [1](../evidence/move_rocker-20260811T214341907868Z.log)…[30](../evidence/move_rocker-20260811T214755139405Z.log) |
+| direction=3, mode=1, speed=50 | `B6 06 01 32 03 00 00 00 36 AA` | **WITHDRAWN.** Read at the time as a right turn in place. **Why:** Wrong, and retracted by the observer during the session. Repeated sends at speed 120 showed the robot travelling rather than rotating. A second reading of the same sends — that the byte picks which leg leads, from the left foot leading here — is not recorded as its own observation because it was an interpretation of these same sends rather than a separate watching; it fell over when mode 2 turned out not to step at all. | 6 sends, [1](../evidence/move_rocker-20260811T214152708519Z.log)…[6](../evidence/move_rocker-20260811T214207319121Z.log) |
 
 <!-- END GENERATED COMMAND TABLE -->
 
@@ -353,16 +412,26 @@ Each row carries a status, and the test suite enforces what each status is allow
 - **decoded** — a frame was derived from the app and recorded together with where in the app it
   came from. It has never been sent to a robot.
 - **confirmed** — the frame was issued through the CLI and someone watched the robot respond.
-  The row points at a log file that has to exist in the repository.
+  The row points at log files that have to exist in the repository.
+
+A confirmed row carries a *list* of observations, one per point of the parameter space that
+was exercised, each with its own parameters, its own behaviour and its own logs. The movement
+command carries two dozen. Some cite several logs, because the finding was read from a run of
+repeated sends rather than a single one.
+
+An observation marked **withdrawn** is a reading that was published and turned out to be
+wrong. It is kept, with its reason, rather than deleted — a reference a reader cannot check
+against its own error rate is harder to trust, not easier.
 
 The distinction between the first two states matters more than it looks. Without it, a
 capability nobody investigated is indistinguishable from one that was hunted for and missed,
 and the table cannot honestly report what work remains.
 
 The rules are enforced by `tests/test_table_invariants.py` and run in CI, rather than being a
-convention this project promises to follow. The suite opens the cited log and checks it
-records the same frame the entry builds, so the strongest status in the table cannot be
-claimed by editing this repository's data by hand.
+convention this project promises to follow. The suite opens every cited log — not the first,
+every one — and checks each records the same frame the entry builds at that observation's own
+parameters, so the strongest status in the table cannot be claimed by editing this
+repository's data by hand.
 
 One boundary worth stating plainly. The strongest claim here is that the tool issued
 exactly these bytes and a contributor reported what followed. Writes go out without

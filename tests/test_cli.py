@@ -468,8 +468,7 @@ def workspace(tmp_path):
     for row in raw["commands"]:
         if row["id"] == "media_music":
             row["status"] = "decoded"
-            for field in ("observed_behavior", "observed_parameters", "hardware_evidence"):
-                row.pop(field, None)
+            row.pop("observations", None)
     head = table.read_text("utf-8").split("\ncommands:")[0]
     table.write_text(
         head + "\n" + yaml.safe_dump({"commands": raw["commands"]}, sort_keys=False, width=96),
@@ -553,7 +552,7 @@ def test_the_promotion_records_the_parameters_that_were_sent(workspace):
     send_then(workspace, "--param", "index=3")
     confirm(workspace)
     entry = next(e for e in load(table).entries if e.id == "media_music")
-    assert entry.observed_parameters == {"index": 3}
+    assert [o.parameters for o in entry.observations] == [{"index": 3}]
 
 
 def test_confirm_refuses_without_a_log(workspace, capsys):
@@ -601,11 +600,38 @@ def test_confirm_refuses_when_the_entry_changed_after_the_observation(workspace,
     assert "changed after the observation" in capsys.readouterr().err
 
 
-def test_confirming_twice_is_refused(workspace, capsys):
+def test_confirming_a_second_observation_appends(workspace):
+    """AE10. A parameterized command is one frame spanning a whole space, so confirming
+    it once described a single point. The second must not overwrite the first."""
+    from carle.table import load_table as load
+
+    table, evidence_dir = workspace
+    send_then(workspace, "--param", "index=1")
+    logs = sorted(evidence_dir.glob("media_music-*.log"))
+    assert confirm(workspace, "--log", logs[0].name, behavior="Played the ABC song") == 0
+
+    send_then(workspace, "--param", "index=2")
+    second = [p for p in sorted(evidence_dir.glob("media_music-*.log")) if p != logs[0]][0]
+    assert confirm(workspace, "--log", second.name, behavior="Played a carol") == 0
+
+    entry = next(e for e in load(table).entries if e.id == "media_music")
+    assert [o.parameters for o in entry.observations] == [{"index": 1}, {"index": 2}]
+    assert entry.observations[0].behavior == "Played the ABC song"
+    assert [o.logs for o in entry.observations] == [
+        [f"evidence/{logs[0].name}"],
+        [f"evidence/{second.name}"],
+    ]
+
+
+def test_confirming_the_same_log_twice_is_refused(workspace, capsys):
+    """AE15. One send is one observation. The reference publishes an observation count,
+    and the same log cited twice would read as two independent confirmations."""
+    table, evidence_dir = workspace
     send_then(workspace)
-    confirm(workspace)
-    assert confirm(workspace) == 1
-    assert "already confirmed" in capsys.readouterr().err
+    log = sorted(evidence_dir.glob("media_music-*.log"))[0]
+    assert confirm(workspace, "--log", log.name) == 0
+    assert confirm(workspace, "--log", log.name) == 1
+    assert "already cited by observation 0" in capsys.readouterr().err
 
 
 def test_confirm_requires_a_behavior_description(workspace):
@@ -655,7 +681,7 @@ def test_naming_the_log_resolves_the_ambiguity(workspace):
     first = sorted(evidence_dir.glob("media_music-*.log"))[0]
     assert confirm(workspace, "--log", first.name) == 0
     entry = next(e for e in load(table).entries if e.id == "media_music")
-    assert entry.observed_parameters == {"index": 1}
+    assert [o.parameters for o in entry.observations] == [{"index": 1}]
 
 
 def test_the_citation_names_the_log_that_was_checked(workspace):
@@ -665,7 +691,7 @@ def test_the_citation_names_the_log_that_was_checked(workspace):
     send_then(workspace)
     confirm(workspace)
     entry = next(e for e in load(table).entries if e.id == "media_music")
-    cited = entry.hardware_evidence["log"]
+    (cited,) = entry.observations[0].logs
     assert (evidence_dir.parent / cited).exists()
 
 

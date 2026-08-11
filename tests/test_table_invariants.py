@@ -12,6 +12,7 @@ point of the repository, not incidental scaffolding.
 from __future__ import annotations
 
 import datetime as dt
+import re
 import textwrap
 from pathlib import Path
 
@@ -45,8 +46,6 @@ CONFIRMED_ROW = {
     "provenance": "decompile",
     "status": "confirmed",
     "derivation": "CommandBuilder.playSong",
-    "observed_behavior": "Robot plays a song",
-    "observed_parameters": {},
 }
 
 
@@ -116,9 +115,50 @@ def evidence_log(
     return f"evidence/{name}"
 
 
+def observation(
+    logs: str | list[str],
+    *,
+    parameters: dict | None = None,
+    behavior: str = "Robot plays a song",
+    date: str = "2026-08-11",
+    platform: str = "darwin",
+    withdrawn: str | None = None,
+) -> dict:
+    built = {
+        "parameters": parameters if parameters is not None else {},
+        "behavior": behavior,
+        "evidence": {
+            "date": date,
+            "platform": platform,
+            "logs": [logs] if isinstance(logs, str) else list(logs),
+        },
+    }
+    if withdrawn is not None:
+        built["withdrawn"] = withdrawn
+    return built
+
+
+def good_observation(tmp_path: Path, name: str = "song_01-good.log") -> dict:
+    """A valid observation to sit alongside a malformed one in every fixture.
+
+    Every fixture below carries at least two observations deliberately. The rules are
+    applied per observation now, so the specific bug to guard against is a loop that
+    validates the first and returns early — with a one-observation fixture, that bug
+    passes every test here while letting an entry's second through twenty-fifth claim
+    say anything at all.
+    """
+    return observation(evidence_log(tmp_path, name=name))
+
+
+#: A rule code, not the `[3]` observation index that now precedes it. Splitting on the
+#: first bracket silently returned "3" for every per-observation violation, so every
+#: rule below reported no code at all and the tests asserting on them could not fail.
+RULE_CODE = re.compile(r"\[([a-z][a-z0-9]*(?:[.-][a-z0-9]+)+)\]")
+
+
 def codes(problems: list[str]) -> set[str]:
     """Extract the bracketed rule codes so assertions do not depend on prose."""
-    return {p.split("[", 1)[1].split("]", 1)[0] for p in problems if "[" in p}
+    return {match.group(1) for problem in problems for match in RULE_CODE.finditer(problem)}
 
 
 # --- The real table ---------------------------------------------------------
@@ -162,52 +202,170 @@ def test_every_category_has_a_published_floor():
     assert set(PUBLISHED_COUNTS) == set(CATEGORIES)
 
 
+# --- The migration kept what the entries already claimed (U2) ----------------
+#
+# Pinned here, in the test file, rather than read from the table — a proof that reads
+# its expectation from the thing it is checking proves nothing.
+
+PRE_MIGRATION_BEHAVIOR = {
+    "media_story": (
+        "After a noticeable silent gap of roughly ten seconds, began narrating a story: "
+        "'The Princess and the Pea'. Sent at index 0 from a quiet robot. Confirms the "
+        "decompiled category mapping — OtherActivity's stroy_btn writes payload byte 0x01."
+    ),
+    "move_rocker": (
+        "Walked forward. Sent with mode at its default of 0, speed 50 and direction 3, "
+        "which confirms the direction mapping derived from NormolContorlActivity "
+        "(counter-clockwise from RIGHT=1, so 3 is up/forward) and shows that mode is not "
+        "an enable — the app only ever writes 1 or 2 there, but 0 moves the robot."
+    ),
+}
+
+
+@pytest.mark.parametrize("entry_id", sorted(PRE_MIGRATION_BEHAVIOR))
+def test_the_migration_preserved_what_the_entry_already_claimed(entry_id):
+    entry = next(e for e in load_table().entries if e.id == entry_id)
+    assert entry.observations[0].behavior == PRE_MIGRATION_BEHAVIOR[entry_id]
+
+
+def test_the_migrated_move_rocker_observation_keeps_its_parameters():
+    entry = next(e for e in load_table().entries if e.id == "move_rocker")
+    assert entry.observations[0].parameters == {"direction": 3, "speed": 50}
+
+
+def test_media_music_split_kept_every_track_it_named():
+    """The one behaviour became three, one per index. The split is where a caveat gets
+    quietly dropped, so the substance is pinned rather than the wording."""
+    entry = next(e for e in load_table().entries if e.id == "media_music")
+    assert len(entry.observations) == 3
+    joined = " ".join(o.behavior for o in entry.observations)
+    for kept in ("Old MacDonald", "ABC song", "Merry Christmas", "CONFOUNDED", "idle"):
+        assert kept in joined, kept
+
+
+# --- The ingested session (U6) ----------------------------------------------
+
+
+def test_move_rocker_carries_every_limb_value_that_was_watched():
+    """Every value except 2, which the notebook marked as INFERRED from the 3/4 pairing
+    rather than separately seen. A committed log for it exists, so an observation would
+    pass every rule here and publish an inference behind an evidence link."""
+    entry = next(e for e in load_table().entries if e.id == "move_rocker")
+    limbs = sorted(o.parameters["limb"] for o in entry.observations if "limb" in o.parameters)
+    assert limbs == [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+
+def test_every_cited_log_is_committed_and_parses():
+    from carle.evidence import read_log
+    from carle.table import repo_root
+
+    for entry in load_table().entries:
+        for observation in entry.observations:
+            for log in observation.logs:
+                assert log.startswith("evidence/"), log
+                read_log(repo_root() / log)
+
+
+def test_a_sequence_derived_observation_cites_more_than_one_log():
+    """The limb joints, the waist and the p5 negative were read from alternating or
+    swept runs. One arbitrary member log would appear to back a behaviour it alone did
+    not produce."""
+    entry = next(e for e in load_table().entries if e.id == "move_rocker")
+    limb_nine = next(o for o in entry.observations if o.parameters.get("limb") == 9)
+    assert len(limb_nine.logs) > 1
+
+
+def test_no_log_is_cited_twice_across_the_whole_table():
+    seen: set[str] = set()
+    for entry in load_table().entries:
+        for observation in entry.observations:
+            for log in observation.logs:
+                assert log not in seen, log
+                seen.add(log)
+
+
+def test_the_withdrawn_byte_zero_reading_is_kept_with_its_reason():
+    """A reader who cannot see what this document got wrong cannot calibrate it."""
+    entry = next(e for e in load_table().entries if e.id == "move_rocker")
+    withdrawn = [o for o in entry.observations if not o.live]
+    assert len(withdrawn) == 1
+    assert "turn in place" in withdrawn[0].behavior
+    # Both failed readings are named: the rotation, and the leg-selector guess that
+    # followed it. They were two interpretations of the same sends, so they are one
+    # observation — citing the same logs twice is what KTD9 forbids.
+    assert "rotating" in withdrawn[0].withdrawn
+    assert "which leg leads" in withdrawn[0].withdrawn
+
+
 # --- Evidence rules (AE1) ---------------------------------------------------
 
 
-def test_confirmed_without_hardware_evidence_fails(tmp_path):
+def test_confirmed_without_any_observation_fails(tmp_path):
     row = {**CONFIRMED_ROW}
     assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
 
 
-@pytest.mark.parametrize("field", ["payload", "derivation", "observed_behavior"])
-def test_confirmed_missing_any_required_field_fails(tmp_path, field):
-    row = {**CONFIRMED_ROW, field: None}
-    row["hardware_evidence"] = {
-        "date": "2026-08-11",
-        "platform": "darwin",
-        "log": evidence_log(tmp_path),
+def test_confirmed_whose_observations_are_all_withdrawn_fails(tmp_path):
+    """AE12. A withdrawn observation does not support the status it was promoted for."""
+    row = {
+        **CONFIRMED_ROW,
+        "observations": [
+            observation(evidence_log(tmp_path, name="a.log"), withdrawn="misread the robot"),
+            observation(evidence_log(tmp_path, name="b.log"), withdrawn="also misread"),
+        ],
     }
     assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
 
 
-@pytest.mark.parametrize("field", ["payload", "derivation", "observed_behavior"])
-def test_confirmed_with_an_empty_string_field_fails(tmp_path, field):
-    """An empty value satisfied the old `is None` check while rendering as nothing."""
-    row = {**CONFIRMED_ROW, field: [] if field == "payload" else ""}
-    row["hardware_evidence"] = {
-        "date": "2026-08-11",
-        "platform": "darwin",
-        "log": evidence_log(tmp_path),
-    }
-    assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
+def test_decoded_whose_observations_are_all_withdrawn_passes(tmp_path):
+    """AE12, the other half. A fully-retracted finding must not force its own deletion.
 
-
-def test_decoded_carrying_hardware_evidence_fails(tmp_path):
-    """Hardware evidence means the entry is confirmed, not decoded."""
+    Without this, the only way to satisfy the gate after withdrawing an entry's last
+    live observation would be to DELETE the withdrawn record — destroying exactly the
+    history that keeping retractions visible exists to preserve.
+    """
     row = {
         **VALID_ROW,
         **FRAME_FIELDS,
         "provenance": "decompile",
         "status": "decoded",
         "derivation": "CommandBuilder.playSong",
-        "hardware_evidence": {
-            "date": "2026-08-11",
-            "platform": "macOS",
-            "log": evidence_log(tmp_path),
-        },
+        "observations": [
+            observation(evidence_log(tmp_path, name="a.log"), withdrawn="misread the robot"),
+            observation(evidence_log(tmp_path, name="b.log"), withdrawn="also misread"),
+        ],
     }
-    assert "state.decoded-observation" in codes(problems_for(tmp_path, [row]))
+    assert [p for p in problems_for(tmp_path, [row]) if p.startswith("song_01")] == []
+
+
+@pytest.mark.parametrize("field", ["payload", "derivation"])
+def test_confirmed_missing_any_required_field_fails(tmp_path, field):
+    row = {**CONFIRMED_ROW, field: None, "observations": [good_observation(tmp_path)]}
+    assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
+
+
+@pytest.mark.parametrize("field", ["payload", "derivation"])
+def test_confirmed_with_an_empty_string_field_fails(tmp_path, field):
+    """An empty value satisfied the old `is None` check while rendering as nothing."""
+    row = {
+        **CONFIRMED_ROW,
+        field: [] if field == "payload" else "",
+        "observations": [good_observation(tmp_path)],
+    }
+    assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
+
+
+def test_decoded_carrying_a_live_observation_fails(tmp_path):
+    """A live observation means the entry is confirmed, not decoded."""
+    row = {
+        **VALID_ROW,
+        **FRAME_FIELDS,
+        "provenance": "decompile",
+        "status": "decoded",
+        "derivation": "CommandBuilder.playSong",
+        "observations": [good_observation(tmp_path)],
+    }
+    assert "state.status-mismatch" in codes(problems_for(tmp_path, [row]))
 
 
 @pytest.mark.parametrize("field", ["payload", "derivation"])
@@ -229,10 +387,15 @@ def test_decoded_missing_a_required_field_fails(tmp_path, field):
 # `log: /etc/hosts` all earned `status: confirmed` under a bare existence check.
 
 
-def _confirmed_with_log(tmp_path: Path, log: str) -> list[str]:
+def _confirmed_with_log(tmp_path: Path, log: str, **kwargs) -> list[str]:
+    """A confirmed row whose SECOND observation is the one under test.
+
+    The first is valid, so a gate that stops after the first observation reports
+    nothing and every one of these tests fails loudly rather than passing by accident.
+    """
     row = {
         **CONFIRMED_ROW,
-        "hardware_evidence": {"date": "2026-08-11", "platform": "darwin", "log": log},
+        "observations": [good_observation(tmp_path), observation(log, **kwargs)],
     }
     return problems_for(tmp_path, [row])
 
@@ -277,45 +440,97 @@ def test_missing_evidence_log_fails(tmp_path):
 
 
 def test_evidence_date_must_be_iso(tmp_path):
-    row = {
-        **CONFIRMED_ROW,
-        "hardware_evidence": {
-            "date": "last Tuesday",
-            "platform": "macOS",
-            "log": evidence_log(tmp_path),
-        },
-    }
-    assert "evidence.date" in codes(problems_for(tmp_path, [row]))
+    problems = _confirmed_with_log(tmp_path, evidence_log(tmp_path), date="last Tuesday")
+    assert "evidence.date" in codes(problems)
 
 
 def test_evidence_date_in_the_future_fails(tmp_path):
     """An observation cannot have happened tomorrow."""
-    row = {
-        **CONFIRMED_ROW,
-        "hardware_evidence": {
-            "date": (dt.date.today() + dt.timedelta(days=1)).isoformat(),
-            "platform": "macOS",
-            "log": evidence_log(tmp_path),
-        },
-    }
-    assert "evidence.date" in codes(problems_for(tmp_path, [row]))
+    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    problems = _confirmed_with_log(tmp_path, evidence_log(tmp_path), date=tomorrow)
+    assert "evidence.date" in codes(problems)
 
 
 def test_evidence_missing_platform_fails(tmp_path):
+    problems = _confirmed_with_log(tmp_path, evidence_log(tmp_path), platform="")
+    assert "observation.shape" in codes(problems)
+
+
+def test_an_observation_citing_no_logs_fails(tmp_path):
+    """An observation with an empty list has nothing behind it at all."""
+    row = {**CONFIRMED_ROW, "observations": [good_observation(tmp_path), observation([])]}
+    assert "observation.shape" in codes(problems_for(tmp_path, [row]))
+
+
+# --- Multi-log observations (KTD8) and log reuse (KTD9) ---------------------
+
+
+def test_an_observation_may_cite_several_logs(tmp_path):
+    """Most of these findings were read from a SEQUENCE of sends, not a single one.
+
+    Alternating two limb values on a loop, or holding one value for a minute, is what
+    produced the reading. Citing one arbitrary member would make that log appear to
+    back a behaviour it alone did not produce.
+    """
+    logs = [evidence_log(tmp_path, name=f"seq-{i}.log") for i in range(3)]
+    row = {**CONFIRMED_ROW, "observations": [good_observation(tmp_path), observation(logs)]}
+    assert [p for p in problems_for(tmp_path, [row]) if p.startswith("song_01")] == []
+
+
+def test_one_bad_log_in_a_multi_log_observation_is_named(tmp_path):
+    """Every cited log is validated, not just the first — and the message says which."""
+    logs = [
+        evidence_log(tmp_path, name="seq-0.log"),
+        evidence_log(tmp_path, name="seq-1.log"),
+        evidence_log(tmp_path, name="seq-2.log", entry_id="dance_01"),
+    ]
+    row = {**CONFIRMED_ROW, "observations": [good_observation(tmp_path), observation(logs)]}
+    problems = problems_for(tmp_path, [row])
+    assert "evidence.log-shape" in codes(problems)
+    assert any("log 2" in p for p in problems), problems
+
+
+def test_two_observations_citing_the_same_log_fail(tmp_path):
+    """AE15. The reference publishes an observation count, which a reader takes as how
+    widely the command was exercised; one send read twice would inflate it."""
+    log = evidence_log(tmp_path)
+    row = {**CONFIRMED_ROW, "observations": [observation(log), observation(log)]}
+    assert "observation.duplicate-log" in codes(problems_for(tmp_path, [row]))
+
+
+def test_a_log_reused_inside_a_multi_log_observation_is_caught(tmp_path):
+    """The duplicate rule counts every cited log, not just single-log observations."""
+    shared = evidence_log(tmp_path, name="shared.log")
     row = {
         **CONFIRMED_ROW,
-        "hardware_evidence": {"date": "2026-08-11", "log": evidence_log(tmp_path)},
+        "observations": [
+            observation([evidence_log(tmp_path, name="seq-0.log"), shared]),
+            observation(shared),
+        ],
     }
-    assert any("missing platform" in p for p in problems_for(tmp_path, [row]))
+    assert "observation.duplicate-log" in codes(problems_for(tmp_path, [row]))
 
 
 # --- State rules ------------------------------------------------------------
 
 
 @pytest.mark.parametrize("status", ["unmapped", "unlocated"])
-@pytest.mark.parametrize("field", ["payload", "derivation", "observed_behavior"])
+@pytest.mark.parametrize("field", ["payload", "derivation"])
 def test_unearned_status_carrying_content_fails(tmp_path, status, field):
     row = {**VALID_ROW, "status": status, field: ["0x00"] if field == "payload" else "something"}
+    assert "state.unearned" in codes(problems_for(tmp_path, [row]))
+
+
+@pytest.mark.parametrize("status", ["unmapped", "unlocated"])
+@pytest.mark.parametrize("withdrawn", [None, "misread it"])
+def test_unearned_status_carrying_any_observation_fails(tmp_path, status, withdrawn):
+    """Not even a withdrawn one: 'unmapped' means nobody has looked for the frame, so
+    there is nothing to have watched, retracted, or otherwise."""
+    row = {
+        **VALID_ROW,
+        "status": status,
+        "observations": [observation(evidence_log(tmp_path), withdrawn=withdrawn)],
+    }
     assert "state.unearned" in codes(problems_for(tmp_path, [row]))
 
 
@@ -424,9 +639,27 @@ def test_non_mapping_row_is_rejected(tmp_path):
         load_table(write_table(tmp_path, ["just a string"]))
 
 
-def test_non_mapping_hardware_evidence_is_rejected(tmp_path):
-    row = {**CONFIRMED_ROW, "hardware_evidence": "I tested it"}
-    with pytest.raises(TableError, match="hardware_evidence must be a mapping"):
+def test_non_list_observations_is_rejected(tmp_path):
+    row = {**CONFIRMED_ROW, "observations": "I tested it"}
+    with pytest.raises(TableError, match="observations must be a list"):
+        load_table(write_table(tmp_path, [row]))
+
+
+def test_non_mapping_observation_is_rejected(tmp_path):
+    row = {**CONFIRMED_ROW, "observations": ["I tested it"]}
+    with pytest.raises(TableError, match="must be a mapping"):
+        load_table(write_table(tmp_path, [row]))
+
+
+def test_observation_without_an_evidence_block_is_rejected(tmp_path):
+    row = {**CONFIRMED_ROW, "observations": [{"parameters": {}, "behavior": "it danced"}]}
+    with pytest.raises(TableError, match="'evidence' mapping"):
+        load_table(write_table(tmp_path, [row]))
+
+
+def test_unknown_observation_field_is_rejected(tmp_path):
+    row = {**CONFIRMED_ROW, "observations": [{**observation("x"), "confidence": "high"}]}
+    with pytest.raises(TableError, match="unknown field"):
         load_table(write_table(tmp_path, [row]))
 
 
@@ -502,11 +735,42 @@ def test_a_log_recording_a_failed_write_is_rejected(tmp_path):
     assert "evidence.log-shape" in codes(_confirmed_with_log(tmp_path, log))
 
 
-def test_a_log_whose_parameters_disagree_with_the_entry_is_rejected(tmp_path):
-    """The frame matches only because the entry was rebuilt at the wrong parameters."""
+def test_a_log_whose_parameters_disagree_with_the_observation_is_rejected(tmp_path):
+    """Not implied by the frame check: the two agree here and the parameters do not.
+
+    Two parameter sets can resolve to the same bytes, so a log recorded at one must
+    not be able to back a claim about another that happens to build identically.
+    """
     log = evidence_log(tmp_path, parameters="index=0")
     problems = _confirmed_with_log(tmp_path, log)
     assert "evidence.log-shape" in codes(problems)
+    assert any("index" in p for p in problems), problems
+
+
+def test_a_withdrawn_observations_log_is_still_validated(tmp_path):
+    """AE14. Withdrawal changes exactly one thing — whether the observation supports
+    the status. If it also skipped log validation, `withdrawn` would be the flag that
+    walks anything at all past the gate."""
+    log = evidence_log(tmp_path, entry_id="dance_01")
+    problems = _confirmed_with_log(tmp_path, log, withdrawn="retracted, but still checked")
+    assert "evidence.log-shape" in codes(problems)
+
+
+def test_a_withdrawn_observation_with_a_blank_reason_is_rejected(tmp_path):
+    """A retraction with no reason tells a reader nothing about what went wrong."""
+    problems = _confirmed_with_log(tmp_path, evidence_log(tmp_path), withdrawn="   ")
+    assert "observation.shape" in codes(problems)
+
+
+def test_a_withdrawn_and_a_live_observation_together_are_validly_confirmed(tmp_path):
+    row = {
+        **CONFIRMED_ROW,
+        "observations": [
+            observation(evidence_log(tmp_path, name="a.log"), withdrawn="misread it"),
+            observation(evidence_log(tmp_path, name="b.log")),
+        ],
+    }
+    assert [p for p in problems_for(tmp_path, [row]) if p.startswith("song_01")] == []
 
 
 def test_an_unparseable_log_is_rejected(tmp_path):
@@ -560,56 +824,20 @@ def test_an_unearned_row_carrying_family_zero_is_rejected(tmp_path):
     assert "state.unearned" in codes(problems_for(tmp_path, [row]))
 
 
-def test_a_decoded_row_carrying_an_observation_is_rejected(tmp_path):
-    """`decoded` means never run on hardware. An observation of any kind contradicts it,
-    and forbidding only hardware_evidence left behavior reports publishable without a log."""
-    row = {
-        **VALID_ROW,
-        **FRAME_FIELDS,
-        "provenance": "decompile",
-        "status": "decoded",
-        "derivation": "somewhere",
-        "observed_behavior": "It danced, I promise",
-    }
-    assert "state.decoded-observation" in codes(problems_for(tmp_path, [row]))
-
-
 def test_a_whitespace_only_behavior_is_rejected(tmp_path):
     """It renders as an empty cell beside a confirmed status and an evidence link."""
-    row = {
-        **CONFIRMED_ROW,
-        "observed_behavior": "   ",
-        "hardware_evidence": {
-            "date": "2026-08-11",
-            "platform": "darwin",
-            "log": evidence_log(tmp_path),
-        },
-    }
-    assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
+    problems = _confirmed_with_log(tmp_path, evidence_log(tmp_path), behavior="   ")
+    assert "observation.shape" in codes(problems)
 
 
 def test_a_date_disagreeing_with_the_log_is_rejected(tmp_path):
-    row = {
-        **CONFIRMED_ROW,
-        "hardware_evidence": {
-            "date": "2020-01-01",
-            "platform": "darwin",
-            "log": evidence_log(tmp_path),
-        },
-    }
-    assert "evidence.log-shape" in codes(problems_for(tmp_path, [row]))
+    problems = _confirmed_with_log(tmp_path, evidence_log(tmp_path), date="2020-01-01")
+    assert "evidence.log-shape" in codes(problems)
 
 
 def test_a_platform_disagreeing_with_the_log_is_rejected(tmp_path):
-    row = {
-        **CONFIRMED_ROW,
-        "hardware_evidence": {
-            "date": "2026-08-11",
-            "platform": "win32",
-            "log": evidence_log(tmp_path),
-        },
-    }
-    assert "evidence.log-shape" in codes(problems_for(tmp_path, [row]))
+    problems = _confirmed_with_log(tmp_path, evidence_log(tmp_path), platform="win32")
+    assert "evidence.log-shape" in codes(problems)
 
 
 def test_a_log_with_unreadable_hex_reports_a_rule_rather_than_crashing(tmp_path):

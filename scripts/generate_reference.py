@@ -81,33 +81,38 @@ def render(table: Table) -> str:
             continue
         lines.append(f"### {title}")
         lines.append("")
-        lines.append("| ID | Capability | Status | Frame | Observed behavior | Evidence |")
+        lines.append("| ID | Capability | Status | Frame at defaults | Observations | Evidence |")
         lines.append("|---|---|---|---|---|---|")
         for entry in entries:
             # Always a concrete frame, built at declared defaults. After the migration
             # no row is fully literal, so rendering templates only for literal rows
             # would publish a schema where the reader expects bytes.
+            #
+            # At DEFAULTS, and the column says so. An entry now carries many
+            # observations at many parameter sets, so there is no single frame this
+            # row could show; picking one would publish it as *the* encoding. The
+            # per-observation frames are in the observations section below.
             encoding = "—"
             if entry.has_frame:
                 try:
-                    # A confirmed row shows the frame its evidence actually recorded.
-                    # Rendering the default-parameter frame published bytes that were
-                    # never sent — a confirmed movement command shown as all zeroes.
-                    encoding = f"`{cell(to_hex(entry.build_frame(entry.observed_parameters)))}`"
+                    encoding = f"`{cell(to_hex(entry.build_frame()))}`"
                 except Exception:  # noqa: BLE001 - a broken row is reported by the gate
                     encoding = "_unbuildable_"
-            observed = cell(entry.observed_behavior) if entry.observed_behavior else "—"
-            if entry.observed_parameters:
-                sent = ", ".join(f"{k}={v}" for k, v in sorted(entry.observed_parameters.items()))
-                observed += f" (sent at {cell(sent)})"
+
+            live = len(entry.live_observations)
+            withdrawn = len(entry.observations) - live
+            if entry.observations:
+                observed = f"{live} observed"
+                if withdrawn:
+                    observed += f", {withdrawn} withdrawn"
+                observed += f" — [see below](#{entry.id})"
+            else:
+                observed = "—"
 
             evidence = "—"
-            if entry.hardware_evidence:
-                log = entry.hardware_evidence.get("log", "")
-                date = cell(entry.hardware_evidence.get("date", ""))
-                # Log paths are repo-root-relative but this document lives in docs/,
-                # so a bare link would resolve to docs/evidence/... and 404.
-                evidence = f"[{date}](../{cell(log)})" if log else date
+            if entry.observations:
+                logs = sum(len(o.logs) for o in entry.observations)
+                evidence = f"{logs} send{'' if logs == 1 else 's'} logged"
             elif entry.derivation:
                 evidence = f"derived: `{cell(entry.derivation)}`"
 
@@ -136,7 +141,65 @@ def render(table: Table) -> str:
                     )
             lines.append("")
 
+    lines.extend(render_observations(table))
     return "\n".join(lines).rstrip() + "\n"
+
+
+def log_links(logs: list[str]) -> str:
+    """Link every cited log, collapsing a long run to its first and last.
+
+    Log paths are repo-root-relative but this document lives in `docs/`, so a bare
+    link would resolve to `docs/evidence/...` and 404.
+    """
+    links = [f"[{i + 1}](../{cell(log)})" for i, log in enumerate(logs)]
+    if len(links) <= 3:
+        return ", ".join(links)
+    # The count is the claim; the endpoints let a reader find the run. Every log in
+    # between is committed under the same entry id in evidence/, not hidden.
+    return f"{len(logs)} sends, {links[0]}…{links[-1]}"
+
+
+def render_observations(table: Table) -> list[str]:
+    """One section per entry that has observations.
+
+    Kept out of the main table deliberately: `move_rocker` alone carries two dozen,
+    and inlining them would bury a fifty-row table. The main row shows the frame at
+    declared defaults and a count; the real findings are here, each with the frame
+    that was actually sent and the logs that recorded it.
+    """
+    observed = [entry for entry in table.entries if entry.observations]
+    if not observed:
+        return []
+
+    lines = ["### Observations", ""]
+    lines.append("What the robot did, per command and per parameter set. Each row is one")
+    lines.append("behaviour watched on hardware; the frame shown is the one that was sent,")
+    lines.append("not the default. A withdrawn row is a published reading that turned out to")
+    lines.append("be wrong — kept, with its reason, so a reader can calibrate this document")
+    lines.append("against its own error rate.")
+    lines.append("")
+
+    for entry in observed:
+        lines.append(f"#### `{cell(entry.id)}`")
+        lines.append("")
+        lines.append("| Sent at | Frame | What the robot did | Logs |")
+        lines.append("|---|---|---|---|")
+        for observation in entry.observations:
+            sent = (
+                ", ".join(f"{k}={v}" for k, v in sorted(observation.parameters.items()))
+                or "defaults"
+            )
+            try:
+                built = f"`{cell(to_hex(entry.build_frame(observation.parameters)))}`"
+            except Exception:  # noqa: BLE001 - a broken row is reported by the gate
+                built = "_unbuildable_"
+            behavior = cell(observation.behavior)
+            if not observation.live:
+                behavior = f"**WITHDRAWN.** {behavior} **Why:** {cell(observation.withdrawn)}"
+            lines.append(f"| {cell(sent)} | {built} | {behavior} | {log_links(observation.logs)} |")
+        lines.append("")
+
+    return lines
 
 
 def splice(document: str, body: str) -> str:

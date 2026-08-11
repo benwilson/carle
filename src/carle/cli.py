@@ -301,14 +301,11 @@ def _run_confirm(args: argparse.Namespace) -> int:
     if not entry.has_frame:
         print(f"error: {entry.id} has no frame, so there is nothing to confirm", file=sys.stderr)
         return 1
-    if entry.status == "confirmed":
-        print(
-            f"error: {entry.id} is already confirmed. Rewriting evidence needs a "
-            "deliberate edit, not a second confirm.",
-            file=sys.stderr,
-        )
-        return 1
-
+    # An already-confirmed entry is no longer refused. That refusal existed to stop
+    # evidence being overwritten, and appending does not overwrite — a parameterized
+    # command is one frame spanning a whole space, and confirming it once described a
+    # single point of that space. What still cannot happen is citing the same log
+    # twice, which is checked below.
     if not args.behavior.strip():
         print("error: --behavior cannot be blank; say what the robot did", file=sys.stderr)
         return 1
@@ -357,6 +354,21 @@ def _run_confirm(args: argparse.Namespace) -> int:
         return 1
     citation = f"{EVIDENCE_DIR}/{log_path.name}"
 
+    # One send is one observation. The reference publishes an observation count, which
+    # a reader reads as how widely the command was exercised; the same log cited twice
+    # would show as two independent confirmations of a single press of the button.
+    already = next(
+        (i for i, o in enumerate(entry.observations) if citation in o.logs),
+        None,
+    )
+    if already is not None:
+        print(
+            f"error: {citation} is already cited by observation {already} of {entry.id}. "
+            "Send again and confirm that log, or edit the existing observation by hand.",
+            file=sys.stderr,
+        )
+        return 1
+
     try:
         expected = entry.build_frame(log.parameters)
     except (frame.FrameError, TableError) as exc:
@@ -372,21 +384,31 @@ def _run_confirm(args: argparse.Namespace) -> int:
         return 1
 
     rows = load_rows(args.table)
+    total = 0
     for row in rows:
         if row["id"] == entry.id:
             row["status"] = "confirmed"
-            row["observed_behavior"] = args.behavior
-            row["observed_parameters"] = dict(log.parameters)
-            row["hardware_evidence"] = {
-                # The calendar date, not the timestamp: table.py validates this with
-                # date.fromisoformat, which accepts nothing else on Python 3.10.
-                "date": log.date.isoformat(),
-                "platform": log.platform,
-                "log": citation,
-            }
+            observations = row.setdefault("observations", [])
+            observations.append(
+                {
+                    "parameters": dict(log.parameters),
+                    "behavior": args.behavior,
+                    "evidence": {
+                        # The calendar date, not the timestamp: table.py validates this
+                        # with date.fromisoformat, which accepts nothing else on 3.10.
+                        "date": log.date.isoformat(),
+                        "platform": log.platform,
+                        # A list of one. Citing several is a hand-edit for a finding read
+                        # from a sequence; the CLI only ever watches one send at a time.
+                        "logs": [citation],
+                    },
+                }
+            )
+            total = len(observations)
     save_table(rows, args.table)
 
-    print(f"{entry.id} is now confirmed, citing {citation}")
+    print(f"{entry.id} is confirmed, citing {citation}")
+    print(f"it now carries {total} observation{'' if total == 1 else 's'}")
     print("regenerate the reference: uv run python scripts/generate_reference.py")
     return 0
 

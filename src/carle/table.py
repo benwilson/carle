@@ -48,17 +48,50 @@ _OPTIONAL = (
     "payload",
     "parameters",
     "derivation",
-    "observed_behavior",
-    "observed_parameters",
-    "hardware_evidence",
+    "observations",
     "superseded_by",
 )
-_EVIDENCE_FIELDS = ("date", "platform", "log")
+_EVIDENCE_FIELDS = ("date", "platform", "logs")
 _PARAMETER_FIELDS = ("min", "max", "default")
+_OBSERVATION_FIELDS = ("parameters", "behavior", "evidence", "withdrawn")
 
 
 class TableError(Exception):
     """Raised when ``commands.yaml`` cannot be parsed into the expected shape."""
+
+
+@dataclass(frozen=True)
+class Observation:
+    """One watched behaviour of one command at one point in its parameter space.
+
+    An entry carries a list of these rather than a single behaviour, because a
+    parameterized command like ``move_rocker`` is one frame spanning a whole space:
+    walking forward and raising an arm are the same command at different bytes.
+
+    ``logs`` is a list, not a single path. Most of these findings were read from a
+    *sequence* of sends — alternating two limb values on a loop, or holding one value
+    for a minute — and citing one arbitrary member would make that log appear to back
+    a behaviour it alone did not produce. Every cited log must have been sent at this
+    observation's parameters, so a multi-log observation is a repeated send, never a
+    swept one.
+    """
+
+    parameters: dict[str, int]
+    behavior: str
+    date: Any
+    platform: str
+    logs: list[str]
+    withdrawn: str | None = None
+
+    @property
+    def live(self) -> bool:
+        """Whether this observation still supports the entry's status.
+
+        Withdrawal changes exactly this one thing. It never exempts the observation
+        from log validation, or ``withdrawn`` becomes the flag that walks anything
+        past the gate.
+        """
+        return self.withdrawn is None
 
 
 @dataclass(frozen=True)
@@ -72,10 +105,12 @@ class Entry:
     payload: list[Any] | None = None
     parameters: dict[str, dict[str, Any]] | None = None
     derivation: str | None = None
-    observed_behavior: str | None = None
-    observed_parameters: dict[str, int] | None = None
-    hardware_evidence: dict[str, Any] | None = None
+    observations: list[Observation] = field(default_factory=list)
     superseded_by: list[str] | None = None
+
+    @property
+    def live_observations(self) -> list[Observation]:
+        return [o for o in self.observations if o.live]
 
     @property
     def has_frame(self) -> bool:
@@ -167,9 +202,7 @@ def _build_entry(row: Any, index: int, path: Path) -> Entry:
     if row["category"] not in CATEGORIES:
         raise TableError(f"{where} has category {row['category']!r}; expected one of {CATEGORIES}")
 
-    evidence = row.get("hardware_evidence")
-    if evidence is not None and not isinstance(evidence, dict):
-        raise TableError(f"{where} hardware_evidence must be a mapping")
+    observations = _build_observations(row.get("observations"), where)
 
     superseded_by = row.get("superseded_by")
     if superseded_by is not None and not isinstance(superseded_by, list):
@@ -199,10 +232,6 @@ def _build_entry(row: Any, index: int, path: Path) -> Entry:
                     f"{where} parameter {name!r} is missing {', '.join(missing_fields)}"
                 )
 
-    observed_parameters = row.get("observed_parameters")
-    if observed_parameters is not None and not isinstance(observed_parameters, dict):
-        raise TableError(f"{where} observed_parameters must be a mapping")
-
     return Entry(
         id=row["id"],
         capability=row["capability"],
@@ -213,11 +242,60 @@ def _build_entry(row: Any, index: int, path: Path) -> Entry:
         payload=payload,
         parameters=parameters,
         derivation=row.get("derivation"),
-        observed_behavior=row.get("observed_behavior"),
-        observed_parameters=observed_parameters,
-        hardware_evidence=evidence,
+        observations=observations,
         superseded_by=superseded_by,
     )
+
+
+def _build_observations(raw: Any, where: str) -> list[Observation]:
+    """Parse the ``observations`` list into :class:`Observation` objects.
+
+    Structural rejection only — shape, types, unknown keys. Whether an observation is
+    *earned* (its logs resolve, its frame matches, its status agrees) is decided by
+    :func:`validate_entry`, which reports every violation at once with a rule code.
+    """
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise TableError(f"{where} observations must be a list")
+
+    built: list[Observation] = []
+    for index, item in enumerate(raw):
+        at = f"{where} observation {index}"
+        if not isinstance(item, dict):
+            raise TableError(f"{at} must be a mapping")
+
+        unknown = set(item) - set(_OBSERVATION_FIELDS)
+        if unknown:
+            raise TableError(f"{at} has unknown field(s): {', '.join(sorted(unknown))}")
+
+        parameters = item.get("parameters") or {}
+        if not isinstance(parameters, dict):
+            raise TableError(f"{at} parameters must be a mapping")
+
+        evidence = item.get("evidence")
+        if not isinstance(evidence, dict):
+            raise TableError(f"{at} must carry an 'evidence' mapping")
+
+        logs = evidence.get("logs")
+        if logs is not None and not isinstance(logs, list):
+            raise TableError(f"{at} evidence.logs must be a list of paths")
+
+        withdrawn = item.get("withdrawn")
+        if withdrawn is not None and not isinstance(withdrawn, str):
+            raise TableError(f"{at} withdrawn must be the reason for the retraction")
+
+        built.append(
+            Observation(
+                parameters=parameters,
+                behavior=item.get("behavior") or "",
+                date=evidence.get("date"),
+                platform=evidence.get("platform") or "",
+                logs=[str(log) for log in (logs or [])],
+                withdrawn=withdrawn,
+            )
+        )
+    return built
 
 
 def validate_entry(entry: Entry, *, root: Path | None = None) -> list[str]:
@@ -235,17 +313,17 @@ def validate_entry(entry: Entry, *, root: Path | None = None) -> list[str]:
             problems.append(
                 f"{entry.id}: [state.unearned] status '{entry.status}' must not carry family"
             )
-        for name in (
-            "payload",
-            "derivation",
-            "observed_behavior",
-            "observed_parameters",
-            "hardware_evidence",
-        ):
+        for name in ("payload", "derivation"):
             if getattr(entry, name):
                 problems.append(
                     f"{entry.id}: [state.unearned] status '{entry.status}' must not carry {name}"
                 )
+        # Not even a withdrawn one. `unmapped` means nobody has looked for the frame;
+        # there is nothing to have watched, retracted or otherwise.
+        if entry.observations:
+            problems.append(
+                f"{entry.id}: [state.unearned] status '{entry.status}' must not carry observations"
+            )
     elif entry.status == "decoded":
         if entry.family is None:
             problems.append(f"{entry.id}: [state.decoded-missing] status 'decoded' requires family")
@@ -254,21 +332,12 @@ def validate_entry(entry: Entry, *, root: Path | None = None) -> list[str]:
                 problems.append(
                     f"{entry.id}: [state.decoded-missing] status 'decoded' requires {name}"
                 )
-        # An observation of ANY kind means the entry is confirmed. Forbidding only
-        # hardware_evidence left `decoded` free to publish a behavior report with no
-        # log, no date and no platform behind it.
-        for name in ("hardware_evidence", "observed_behavior", "observed_parameters"):
-            if getattr(entry, name):
-                problems.append(
-                    f"{entry.id}: [state.decoded-observation] status 'decoded' must not carry "
-                    f"{name}; an observation means the entry is 'confirmed'"
-                )
     elif entry.status == "confirmed":
         if entry.family is None:
             problems.append(
                 f"{entry.id}: [state.confirmed-missing] status 'confirmed' requires family"
             )
-        for name in ("payload", "derivation", "observed_behavior", "hardware_evidence"):
+        for name in ("payload", "derivation"):
             value = getattr(entry, name)
             if isinstance(value, str):
                 value = value.strip()
@@ -276,13 +345,22 @@ def validate_entry(entry: Entry, *, root: Path | None = None) -> list[str]:
                 problems.append(
                     f"{entry.id}: [state.confirmed-missing] status 'confirmed' requires {name}"
                 )
-        # `observed_parameters` is checked for presence, not emptiness: a command with
-        # no parameters legitimately records `{}`, and that is a real observation.
-        if entry.observed_parameters is None:
-            problems.append(
-                f"{entry.id}: [state.confirmed-missing] status 'confirmed' requires "
-                "observed_parameters"
-            )
+
+    # KTD3, in one direction: `status` is 'confirmed' if and only if at least one
+    # observation is not withdrawn. A `decoded` entry may keep observations provided
+    # every one of them is withdrawn — otherwise a finding that was published and
+    # then fully retracted would have to be DELETED to satisfy the gate, destroying
+    # exactly the record that keeping retractions visible exists to preserve.
+    if entry.status == "confirmed" and not entry.live_observations:
+        problems.append(
+            f"{entry.id}: [state.confirmed-missing] status 'confirmed' requires at least one "
+            "observation that is not withdrawn"
+        )
+    if entry.status != "confirmed" and entry.live_observations:
+        problems.append(
+            f"{entry.id}: [state.status-mismatch] status '{entry.status}' carries a live "
+            "observation; an observation that has not been withdrawn means 'confirmed'"
+        )
 
     # Provenance rule. A row seeded from marketing copy describes a capability,
     # never a protocol command, so it can never carry protocol bytes.
@@ -334,57 +412,95 @@ def _validate_frame(entry: Entry) -> list[str]:
 
 
 def _validate_evidence(entry: Entry, root: Path) -> list[str]:
-    """Hardware evidence must resolve, not merely be present.
+    """Validate every observation independently, and the list as a whole.
 
-    A presence check would let ``hardware_evidence: {log: anything}`` pass the gate,
-    which is the failure mode the whole rule exists to prevent.
+    Every rule below is applied per observation rather than once per entry. That is
+    the whole point of the list: an entry with twenty-five observations makes
+    twenty-five separate claims, and a gate that checked only the first would let the
+    other twenty-four say anything at all.
     """
-    evidence = entry.hardware_evidence
-    if evidence is None:
-        return []
-
     problems: list[str] = []
-    missing = [key for key in _EVIDENCE_FIELDS if not evidence.get(key)]
-    if missing:
-        problems.append(f"{entry.id}: hardware_evidence is missing {', '.join(missing)}")
+    seen_logs: dict[str, int] = {}
 
-    raw_date = evidence.get("date")
-    if raw_date is not None:
-        observed: _datetime.date | None = None
-        if isinstance(raw_date, _datetime.date):
-            observed = raw_date
-        else:
-            try:
-                observed = _datetime.date.fromisoformat(str(raw_date))
-            except ValueError:
+    for index, observation in enumerate(entry.observations):
+        problems.extend(_validate_observation(entry, observation, index, root))
+        # KTD9. The published reference shows an observation count, which a reader
+        # takes as a measure of how widely the command was exercised. Two
+        # observations over one send would read as two independent confirmations.
+        for log in observation.logs:
+            if log in seen_logs:
                 problems.append(
-                    f"{entry.id}: [evidence.date] hardware_evidence.date {raw_date!r} "
-                    "is not an ISO 8601 date"
+                    f"{entry.id}[{index}]: [observation.duplicate-log] cites {log!r}, which "
+                    f"observation {seen_logs[log]} already cites; one send is one observation"
                 )
-        # A future date cannot describe an observation that already happened.
-        # Compare against the same clock the CLI stamps with. `date.today()` is local,
-        # so an evening promotion west of UTC wrote a 'future' date and failed CI.
-        if (
-            observed is not None
-            and observed > _datetime.datetime.now(_datetime.timezone.utc).date()
-        ):
-            problems.append(
-                f"{entry.id}: [evidence.date] hardware_evidence.date {raw_date} is in the "
-                "future; it must record when the robot was actually observed"
-            )
-
-    log = evidence.get("log")
-    if log:
-        path_problems = _validate_log_path(entry.id, str(log), root)
-        problems.extend(path_problems)
-        if not path_problems:
-            problems.extend(_validate_log_contents(entry, root / str(log)))
+            else:
+                seen_logs[log] = index
 
     return problems
 
 
-def _validate_log_contents(entry: Entry, path: Path) -> list[str]:
-    """Open the cited log and check it actually supports the claim.
+def _validate_observation(
+    entry: Entry, observation: Observation, index: int, root: Path
+) -> list[str]:
+    """Every rule for one observation. ``withdrawn`` exempts it from none of them."""
+    where = f"{entry.id}[{index}]"
+    problems: list[str] = []
+
+    if not observation.behavior.strip():
+        problems.append(
+            f"{where}: [observation.shape] behavior is blank; record what the robot did"
+        )
+    if observation.withdrawn is not None and not observation.withdrawn.strip():
+        problems.append(
+            f"{where}: [observation.shape] withdrawn must give the reason for the retraction"
+        )
+    missing = [name for name in _EVIDENCE_FIELDS if not getattr(observation, name)]
+    if missing:
+        problems.append(f"{where}: [observation.shape] evidence is missing {', '.join(missing)}")
+
+    problems.extend(_validate_observation_date(where, observation))
+
+    for log_index, log in enumerate(observation.logs):
+        at = where if len(observation.logs) == 1 else f"{where} log {log_index}"
+        path_problems = _validate_log_path(at, log, root)
+        problems.extend(path_problems)
+        if not path_problems:
+            problems.extend(_validate_log_contents(entry, observation, at, root / log))
+
+    return problems
+
+
+def _validate_observation_date(where: str, observation: Observation) -> list[str]:
+    raw_date = observation.date
+    if raw_date is None:
+        return []
+
+    problems: list[str] = []
+    observed: _datetime.date | None = None
+    if isinstance(raw_date, _datetime.date):
+        observed = raw_date
+    else:
+        try:
+            observed = _datetime.date.fromisoformat(str(raw_date))
+        except ValueError:
+            problems.append(
+                f"{where}: [evidence.date] evidence.date {raw_date!r} is not an ISO 8601 date"
+            )
+    # A future date cannot describe an observation that already happened.
+    # Compare against the same clock the CLI stamps with. `date.today()` is local,
+    # so an evening promotion west of UTC wrote a 'future' date and failed CI.
+    if observed is not None and observed > _datetime.datetime.now(_datetime.timezone.utc).date():
+        problems.append(
+            f"{where}: [evidence.date] evidence.date {raw_date} is in the future; it must "
+            "record when the robot was actually observed"
+        )
+    return problems
+
+
+def _validate_log_contents(
+    entry: Entry, observation: Observation, where: str, path: Path
+) -> list[str]:
+    """Open the cited log and check it actually supports this observation's claim.
 
     This is the rule that makes the evidence mechanism real. Without it the gate
     checks only that *some* non-empty file sits in ``evidence/``, so anyone can
@@ -393,8 +509,7 @@ def _validate_log_contents(entry: Entry, path: Path) -> list[str]:
     """
     from carle import evidence as evidence_log  # local import: evidence imports frame, not table
 
-    prefix = f"{entry.id}: [evidence.log-shape]"
-    evidence = entry.hardware_evidence or {}
+    prefix = f"{where}: [evidence.log-shape]"
     try:
         log = evidence_log.read_log(path)
     except evidence_log.EvidenceError as exc:
@@ -412,37 +527,39 @@ def _validate_log_contents(entry: Entry, path: Path) -> list[str]:
         return problems
 
     try:
-        expected = entry.build_frame(entry.observed_parameters or {})
+        expected = entry.build_frame(observation.parameters or {})
     except (frame.FrameError, TableError) as exc:
-        return [f"{prefix} entry cannot be rebuilt at its observed parameters: {exc}"]
+        return [f"{prefix} entry cannot be rebuilt at this observation's parameters: {exc}"]
 
     if log.frame != expected:
         problems.append(
             f"{prefix} log records {frame.to_hex(log.frame)} but the entry rebuilds to "
             f"{frame.to_hex(expected)}; the observation described a different frame"
         )
-    recorded_date = (evidence.get("date") if isinstance(evidence, dict) else None) or ""
+    recorded_date = observation.date or ""
     if str(recorded_date) != log.date.isoformat():
         problems.append(
-            f"{prefix} entry dates the observation {recorded_date}, but the log was "
+            f"{prefix} observation is dated {recorded_date}, but the log was "
             f"written {log.date.isoformat()}"
         )
-    recorded_platform = (evidence.get("platform") if isinstance(evidence, dict) else None) or ""
-    if str(recorded_platform) != log.platform:
+    if observation.platform != log.platform:
         problems.append(
-            f"{prefix} entry names platform {recorded_platform!r}, but the log records "
-            f"{log.platform!r}"
+            f"{prefix} observation names platform {observation.platform!r}, but the log "
+            f"records {log.platform!r}"
         )
-    if log.parameters != (entry.observed_parameters or {}):
+    # Not implied by the frame check: two different parameter sets can resolve to the
+    # same bytes, and a log recorded at `limb=1` must not be able to back a claim
+    # about some other parameter that happens to build identically.
+    if log.parameters != (observation.parameters or {}):
         problems.append(
-            f"{prefix} log was sent with {log.parameters or 'no parameters'} but the entry "
-            f"records {entry.observed_parameters or 'none'}"
+            f"{prefix} log was sent with {log.parameters or 'no parameters'} but the "
+            f"observation records {observation.parameters or 'none'}"
         )
     return problems
 
 
-def _validate_log_path(entry_id: str, log: str, root: Path) -> list[str]:
-    """A confirmed row's evidence must point at a real log file inside ``evidence/``.
+def _validate_log_path(where: str, log: str, root: Path) -> list[str]:
+    """An observation's evidence must point at a real log file inside ``evidence/``.
 
     A bare existence check is not enough, and the gap is not theoretical: ``root / log``
     silently discards ``root`` when ``log`` is absolute, and any path that happens to
@@ -450,7 +567,7 @@ def _validate_log_path(entry_id: str, log: str, root: Path) -> list[str]:
     ``status: confirmed`` under the previous check — the single strongest claim this
     repository makes, available to anyone who never touched a robot.
     """
-    prefix = f"{entry_id}: [evidence.log]"
+    prefix = f"{where}: [evidence.log]"
     path = Path(log)
 
     if path.is_absolute():

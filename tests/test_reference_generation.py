@@ -167,8 +167,8 @@ def test_unmapped_rows_render_no_encoding_and_no_behavior(doc_text):
             assert rows[entry.id][4] == "—", f"{entry.id} shows an observed behavior"
 
 
-def test_confirmed_row_renders_its_observed_behavior(tmp_path):
-    """observed_behavior is required by validation and was silently dropped from output."""
+def test_confirmed_row_renders_its_observation(tmp_path):
+    """The behaviour is required by validation and was silently dropped from output."""
     path = table_with(
         tmp_path,
         {
@@ -180,18 +180,23 @@ def test_confirmed_row_renders_its_observed_behavior(tmp_path):
             "family": "0xB6",
             "payload": ["0x01", "0x02"],
             "derivation": "CommandBuilder.walk",
-            "observed_behavior": "Robot takes two steps forward",
-            "observed_parameters": {},
-            "hardware_evidence": {
-                "date": "2026-08-11",
-                "platform": "macOS",
-                "log": "evidence/move_forward.log",
-            },
+            "observations": [
+                {
+                    "parameters": {},
+                    "behavior": "Robot takes two steps forward",
+                    "evidence": {
+                        "date": "2026-08-11",
+                        "platform": "macOS",
+                        "logs": ["evidence/move_forward.log"],
+                    },
+                }
+            ],
         },
     )
     body = render(load_table(path))
     assert "Robot takes two steps forward" in body
     assert "`B6 02 01 02 03 AA`" in body
+    assert "1 observed" in body
 
 
 def test_evidence_links_resolve_from_the_docs_directory(tmp_path):
@@ -207,16 +212,103 @@ def test_evidence_links_resolve_from_the_docs_directory(tmp_path):
             "family": "0xB6",
             "payload": ["0x01", "0x02"],
             "derivation": "CommandBuilder.walk",
-            "observed_behavior": "Robot takes two steps forward",
-            "observed_parameters": {},
-            "hardware_evidence": {
-                "date": "2026-08-11",
-                "platform": "macOS",
-                "log": "evidence/move_forward.log",
-            },
+            "observations": [
+                {
+                    "parameters": {},
+                    "behavior": "Robot takes two steps forward",
+                    "evidence": {
+                        "date": "2026-08-11",
+                        "platform": "macOS",
+                        "logs": ["evidence/move_forward.log"],
+                    },
+                }
+            ],
         },
     )
     assert "(../evidence/move_forward.log)" in render(load_table(path))
+
+
+def observation_section(body: str, entry_id: str) -> str:
+    """The observations block for one entry, up to the next heading."""
+    start = body.index(f"#### `{entry_id}`")
+    rest = body[start + 1 :]
+    end = rest.find("\n#### ")
+    return rest if end == -1 else rest[:end]
+
+
+def observation_rows(body: str, entry_id: str) -> list[str]:
+    """The data rows of one entry's observations table, excluding header and rule."""
+    lines = observation_section(body, entry_id).splitlines()
+    after_rule = lines[lines.index("|---|---|---|---|") + 1 :]
+    return [line for line in after_rule if line.startswith("| ")]
+
+
+def test_each_observation_renders_its_own_row():
+    entry = next(e for e in load_table().entries if e.id == "media_music")
+    assert len(observation_rows(render(load_table()), "media_music")) == len(entry.observations)
+
+
+def test_each_observation_row_shows_the_frame_that_was_sent():
+    """Not the default. An entry with two dozen observations has no single frame, and
+    showing the default beside a behaviour would publish bytes that were never sent."""
+    body = render(load_table())
+    entry = next(e for e in load_table().entries if e.id == "move_rocker")
+    section = observation_section(body, "move_rocker")
+    limb_nine = next(o for o in entry.observations if o.parameters.get("limb") == 9)
+    from carle.frame import to_hex
+
+    assert f"`{to_hex(entry.build_frame(limb_nine.parameters))}`" in section
+    assert f"`{to_hex(entry.build_frame())}`" not in section
+
+
+def test_the_main_table_labels_its_frame_column_as_defaults():
+    assert "| Frame at defaults |" in render(load_table())
+
+
+def test_a_withdrawn_observation_is_published_with_its_reason(doc_text):
+    """AE13. A retraction that lives only in commit history tells a reader nothing about
+    this document's error rate."""
+    entry = next(e for e in load_table().entries if e.id == "move_rocker")
+    withdrawn = next(o for o in entry.observations if not o.live)
+    region = generated_region(doc_text)
+    assert cell(withdrawn.behavior) in region
+    assert cell(withdrawn.withdrawn) in region
+
+
+def test_a_withdrawn_observation_is_distinguished_from_a_live_one():
+    body = render(load_table())
+    section = observation_section(body, "move_rocker")
+    assert "**WITHDRAWN.**" in section
+    entry = next(e for e in load_table().entries if e.id == "move_rocker")
+    live = next(o for o in entry.observations if o.live)
+    live_row = next(r for r in observation_rows(body, "move_rocker") if cell(live.behavior) in r)
+    assert "WITHDRAWN" not in live_row
+
+
+def test_an_entry_with_no_observations_renders_no_section():
+    body = render(load_table())
+    for entry in load_table().entries:
+        if not entry.observations:
+            assert f"#### `{entry.id}`" not in body
+
+
+def test_every_observation_link_resolves_from_the_docs_directory():
+    """Including each link of a multi-log observation, not just the first."""
+    body = render(load_table())
+    for target in re.findall(r"\]\(\.\./(evidence/[^)]+)\)", body):
+        assert (repo_root() / target).is_file(), target
+
+
+def test_a_long_run_of_logs_is_collapsed_but_states_its_count():
+    """The count is the claim — 'twenty sends settled it' is the evidence. Rendering
+    twenty links per row would make the section unreadable; dropping the count would
+    silently understate what backs the finding."""
+    from generate_reference import log_links
+
+    collapsed = log_links([f"evidence/x{i}.log" for i in range(20)])
+    assert "20 sends" in collapsed
+    assert collapsed.count("](../") == 2
+    assert log_links(["evidence/a.log", "evidence/b.log"]).count("](../") == 2
 
 
 def test_category_titles_cover_every_category():

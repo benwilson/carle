@@ -12,10 +12,19 @@
 #              decompile        -> row exists because the frame was found in the app
 #
 # A vendor-marketing row can never carry an encoding.
+#
+# observations: a LIST. One command spans a parameter space, so one entry carries many
+#               findings. Each has its own parameters, behavior, date, platform and logs.
+#               `logs` is plural because most findings were read from a run of repeated
+#               sends, not one. A `withdrawn` key retracts an observation without deleting
+#               it: it stops supporting `confirmed`, and is still validated in full.
+#               `confirmed` iff at least one observation is not withdrawn.
 
 coverage_note: |
   Row set and status as of the first hardware session (2026-08-11), following the first
-  decompile of the Carle Android app (base.apk, com.ihunuo.jtlrobot).
+  decompile of the Carle Android app (base.apk, com.ihunuo.jtlrobot). That session's
+  findings are recorded per observation on each entry rather than one per command: the
+  movement frame alone was watched at two dozen points of its parameter space.
 
   Hardware corrected the decompile on two points.
 
@@ -372,14 +381,16 @@ commands:
       min: 0
       max: 255
       default: 0
-  observed_behavior: 'After a noticeable silent gap of roughly ten seconds, began narrating a story:
-    ''The Princess and the Pea''. Sent at index 0 from a quiet robot. Confirms the decompiled category
-    mapping — OtherActivity''s stroy_btn writes payload byte 0x01.'
-  observed_parameters: {}
-  hardware_evidence:
-    date: '2026-08-11'
-    platform: darwin
-    log: evidence/media_story-20260811T211406739712Z.log
+  observations:
+  - parameters: {}
+    behavior: 'After a noticeable silent gap of roughly ten seconds, began narrating a story: ''The
+      Princess and the Pea''. Sent at index 0 from a quiet robot. Confirms the decompiled category
+      mapping — OtherActivity''s stroy_btn writes payload byte 0x01.'
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/media_story-20260811T211406739712Z.log
 - id: media_dance
   capability: Trigger the dance tracks
   category: dance
@@ -410,17 +421,34 @@ commands:
       min: 0
       max: 255
       default: 0
-  observed_behavior: 'Selects a track by `index` and begins playing it. Observed: index 0 began with
-    "Old MacDonald Had a Farm", index 1 with the ABC song, index 2 with "We Wish You a Merry Christmas".
-    Dancing accompanied playback at every index observed, including 0. CONFOUNDED: further songs played
-    minutes later with no command on the wire, which was first read as playback continuing on its
-    own — but the robot is since known to enter pre-programmed idle behaviour unprompted, so that
-    later content cannot be attributed to this command. Only the track each index STARTS with is established.'
-  observed_parameters: {}
-  hardware_evidence:
-    date: '2026-08-11'
-    platform: darwin
-    log: evidence/media_music-20260811T210822337016Z.log
+  observations:
+  - parameters: {}
+    behavior: Began "Old MacDonald Had a Farm", with dancing. Sent at the declared default index,
+      which the app itself hardcodes.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/media_music-20260811T210822337016Z.log
+  - parameters:
+      index: 1
+    behavior: Began the ABC song, with dancing.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/media_music-20260811T210912436333Z.log
+  - parameters:
+      index: 2
+    behavior: 'Began "We Wish You a Merry Christmas", with dancing. CONFOUNDED: further songs played
+      minutes later with no command on the wire, first read as playback continuing on its own — but
+      the robot is since known to enter pre-programmed idle behaviour unprompted, so that later content
+      cannot be attributed to this command. Only the track each index STARTS with is established.'
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/media_music-20260811T211055517492Z.log
 - id: volume_set
   capability: Set volume; payload byte 2 cycles 0, 1, 2
   category: system
@@ -475,14 +503,411 @@ commands:
       min: 0
       max: 255
       default: 0
-  observed_behavior: Walked forward. Sent with mode at its default of 0, speed 50 and direction 3,
-    which confirms the direction mapping derived from NormolContorlActivity (counter-clockwise from
-    RIGHT=1, so 3 is up/forward) and shows that mode is not an enable — the app only ever writes 1
-    or 2 there, but 0 moves the robot.
-  observed_parameters:
-    direction: 3
-    speed: 50
-  hardware_evidence:
-    date: '2026-08-11'
-    platform: darwin
-    log: evidence/move_rocker-20260811T211646910616Z.log
+  observations:
+  - parameters:
+      direction: 3
+      speed: 50
+    behavior: Walked forward. Sent with mode at its default of 0, speed 50 and direction 3, which
+      confirms the direction mapping derived from NormolContorlActivity (counter-clockwise from RIGHT=1,
+      so 3 is up/forward) and shows that mode is not an enable — the app only ever writes 1 or 2 there,
+      but 0 moves the robot.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T211646910616Z.log
+  - parameters:
+      limb: 1
+    behavior: Left arm raised, as though offering a handshake. The arm STAYS raised — these are poses,
+      not gestures.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T212202450866Z.log
+  - parameters:
+      limb: 3
+    behavior: Right arm raised to the same handshake position limb 1 gives the left. Read from alternating
+      3/4/3, which moved the arm up, down, up.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T212322911335Z.log
+      - evidence/move_rocker-20260811T212328460554Z.log
+      - evidence/move_rocker-20260811T212346370379Z.log
+      - evidence/move_rocker-20260811T212354260482Z.log
+  - parameters:
+      limb: 4
+    behavior: The right-arm return. Read from the same 3/4/3 alternation.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T212326061149Z.log
+      - evidence/move_rocker-20260811T212350840245Z.log
+  - parameters:
+      limb: 5
+    behavior: 'LEFT SHOULDER — a lateral raise, described as flapping like a bird. Not the elbow:
+      the distinction from 1/2 is the AXIS of motion, not how far the arm travels. Read from alternating
+      5/6/5.'
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T212422432599Z.log
+      - evidence/move_rocker-20260811T212429931981Z.log
+  - parameters:
+      limb: 6
+    behavior: The return for 5, from the same alternation.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T212425792417Z.log
+  - parameters:
+      limb: 7
+    behavior: 'RIGHT SHOULDER — a lateral raise mirroring 5/6. Read from alternating 7/8 on a loop:
+      the right arm lifts and lowers, flapping.'
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T212522431769Z.log
+      - evidence/move_rocker-20260811T212531671973Z.log
+      - evidence/move_rocker-20260811T212653542045Z.log
+      - evidence/move_rocker-20260811T212658193387Z.log
+      - evidence/move_rocker-20260811T212703142808Z.log
+      - evidence/move_rocker-20260811T212708932602Z.log
+      - evidence/move_rocker-20260811T212713943766Z.log
+      - evidence/move_rocker-20260811T212718652677Z.log
+      - evidence/move_rocker-20260811T212727952346Z.log
+      - evidence/move_rocker-20260811T212736412740Z.log
+  - parameters:
+      limb: 8
+    behavior: The return for 7, from the same alternation.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T212527172131Z.log
+      - evidence/move_rocker-20260811T212655943134Z.log
+      - evidence/move_rocker-20260811T212700411316Z.log
+      - evidence/move_rocker-20260811T212706173327Z.log
+      - evidence/move_rocker-20260811T212711662244Z.log
+      - evidence/move_rocker-20260811T212716342152Z.log
+      - evidence/move_rocker-20260811T212721861840Z.log
+      - evidence/move_rocker-20260811T212732002703Z.log
+      - evidence/move_rocker-20260811T212738783455Z.log
+  - parameters:
+      limb: 9
+    behavior: LEFT ELBOW — a bend at the forearm producing a handshake motion. Read from alternating
+      9/10. The side was not stated by the observer at the time; 11/12 settled it retroactively as
+      the right, making this the left.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T212759602817Z.log
+      - evidence/move_rocker-20260811T212805542635Z.log
+      - evidence/move_rocker-20260811T212811993619Z.log
+      - evidence/move_rocker-20260811T212817901736Z.log
+      - evidence/move_rocker-20260811T212823122699Z.log
+      - evidence/move_rocker-20260811T212828643188Z.log
+  - parameters:
+      limb: 10
+    behavior: The return for 9, from the same alternation.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T212803298165Z.log
+      - evidence/move_rocker-20260811T212809352600Z.log
+      - evidence/move_rocker-20260811T212814753141Z.log
+      - evidence/move_rocker-20260811T212820304329Z.log
+      - evidence/move_rocker-20260811T212825552799Z.log
+      - evidence/move_rocker-20260811T212832694009Z.log
+  - parameters:
+      limb: 11
+    behavior: RIGHT ELBOW bend, mirroring 9/10 — which is what settles 9/10 as the left. Read from
+      alternating 11/12.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T212849553538Z.log
+      - evidence/move_rocker-20260811T212859273628Z.log
+      - evidence/move_rocker-20260811T212905543578Z.log
+      - evidence/move_rocker-20260811T212912023005Z.log
+      - evidence/move_rocker-20260811T212916912910Z.log
+      - evidence/move_rocker-20260811T212922492445Z.log
+  - parameters:
+      limb: 12
+    behavior: The return for 11, from the same alternation.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T212853663428Z.log
+      - evidence/move_rocker-20260811T212902123870Z.log
+      - evidence/move_rocker-20260811T212909802966Z.log
+      - evidence/move_rocker-20260811T212914393275Z.log
+      - evidence/move_rocker-20260811T212920242210Z.log
+      - evidence/move_rocker-20260811T212924893813Z.log
+  - parameters:
+      p3: 1
+    behavior: 'Leaned to the LEFT, bending slightly at the WAIST — a joint the limb selector does
+      not reach. The lean holds. Follows the limb byte''s convention: odd acts, even returns.'
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T213139024791Z.log
+      - evidence/move_rocker-20260811T213144574917Z.log
+      - evidence/move_rocker-20260811T213150874726Z.log
+      - evidence/move_rocker-20260811T213155405340Z.log
+      - evidence/move_rocker-20260811T213202213888Z.log
+      - evidence/move_rocker-20260811T213207284424Z.log
+      - evidence/move_rocker-20260811T213244483582Z.log
+      - evidence/move_rocker-20260811T213246824182Z.log
+      - evidence/move_rocker-20260811T213250845426Z.log
+      - evidence/move_rocker-20260811T213253363924Z.log
+  - parameters:
+      p3: 2
+    behavior: Returned upright from the leaned position. The observer confirmed the command did this,
+      not their hand.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T213141306650Z.log
+      - evidence/move_rocker-20260811T213148654099Z.log
+      - evidence/move_rocker-20260811T213153153889Z.log
+      - evidence/move_rocker-20260811T213159274595Z.log
+      - evidence/move_rocker-20260811T213204615103Z.log
+      - evidence/move_rocker-20260811T213210644400Z.log
+      - evidence/move_rocker-20260811T213259094253Z.log
+      - evidence/move_rocker-20260811T213302755723Z.log
+      - evidence/move_rocker-20260811T213306653779Z.log
+      - evidence/move_rocker-20260811T213308874593Z.log
+  - parameters:
+      p5: 1
+    behavior: No movement of any kind. The byte the app never writes produces no observable effect.
+      Also held for a full minute across 22 back-to-back sends, which suppressed the idle routine
+      for the whole window — still nothing.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T213350634876Z.log
+      - evidence/move_rocker-20260811T213353724275Z.log
+      - evidence/move_rocker-20260811T213529215936Z.log
+      - evidence/move_rocker-20260811T213531797050Z.log
+      - evidence/move_rocker-20260811T213533985764Z.log
+      - evidence/move_rocker-20260811T213536415243Z.log
+      - evidence/move_rocker-20260811T213539836883Z.log
+      - evidence/move_rocker-20260811T213542145736Z.log
+      - evidence/move_rocker-20260811T213651926166Z.log
+      - evidence/move_rocker-20260811T213656607071Z.log
+      - evidence/move_rocker-20260811T213702517184Z.log
+      - evidence/move_rocker-20260811T213710136534Z.log
+      - evidence/move_rocker-20260811T213716227177Z.log
+      - evidence/move_rocker-20260811T213720997907Z.log
+      - evidence/move_rocker-20260811T213817456898Z.log
+      - evidence/move_rocker-20260811T213820006884Z.log
+      - evidence/move_rocker-20260811T213822497811Z.log
+      - evidence/move_rocker-20260811T213824778702Z.log
+      - evidence/move_rocker-20260811T213828317445Z.log
+      - evidence/move_rocker-20260811T213832487152Z.log
+      - evidence/move_rocker-20260811T213834706835Z.log
+      - evidence/move_rocker-20260811T213837436586Z.log
+      - evidence/move_rocker-20260811T213839686922Z.log
+      - evidence/move_rocker-20260811T213843706065Z.log
+      - evidence/move_rocker-20260811T213846617880Z.log
+      - evidence/move_rocker-20260811T213849346384Z.log
+      - evidence/move_rocker-20260811T213852377511Z.log
+      - evidence/move_rocker-20260811T213854867057Z.log
+      - evidence/move_rocker-20260811T213857267212Z.log
+      - evidence/move_rocker-20260811T213900266394Z.log
+      - evidence/move_rocker-20260811T213902577168Z.log
+      - evidence/move_rocker-20260811T213905187082Z.log
+      - evidence/move_rocker-20260811T213907917706Z.log
+      - evidence/move_rocker-20260811T213910106936Z.log
+      - evidence/move_rocker-20260811T213912658040Z.log
+      - evidence/move_rocker-20260811T213916498028Z.log
+  - parameters:
+      p5: 2
+    behavior: No movement of any kind. The byte the app never writes produces no observable effect.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T213355945737Z.log
+      - evidence/move_rocker-20260811T213358735488Z.log
+  - parameters:
+      p5: 3
+    behavior: No movement of any kind. The byte the app never writes produces no observable effect.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T213401044670Z.log
+      - evidence/move_rocker-20260811T213403866085Z.log
+  - parameters:
+      p5: 8
+    behavior: No movement of any kind. The byte the app never writes produces no observable effect.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T213407314727Z.log
+      - evidence/move_rocker-20260811T213409534961Z.log
+  - parameters:
+      p5: 64
+    behavior: No movement of any kind. The byte the app never writes produces no observable effect.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T213413704647Z.log
+      - evidence/move_rocker-20260811T213416374417Z.log
+  - parameters:
+      p5: 128
+    behavior: No movement of any kind. The byte the app never writes produces no observable effect.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T213420034830Z.log
+      - evidence/move_rocker-20260811T213422405592Z.log
+      - evidence/move_rocker-20260811T213548144864Z.log
+      - evidence/move_rocker-20260811T213550905475Z.log
+      - evidence/move_rocker-20260811T213553305991Z.log
+      - evidence/move_rocker-20260811T213557655313Z.log
+      - evidence/move_rocker-20260811T213600054795Z.log
+      - evidence/move_rocker-20260811T213602816015Z.log
+  - parameters:
+      p5: 255
+    behavior: No movement of any kind. The byte the app never writes produces no observable effect.
+      Includes twelve alternations against p5=1, run to test whether this byte drove the LED face
+      and ears; the display did not track the send rhythm, so the activity seen during the sweep is
+      not attributable to it.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T213426066177Z.log
+      - evidence/move_rocker-20260811T213430384716Z.log
+      - evidence/move_rocker-20260811T213608365126Z.log
+      - evidence/move_rocker-20260811T213611396167Z.log
+      - evidence/move_rocker-20260811T213613945113Z.log
+      - evidence/move_rocker-20260811T213616255262Z.log
+      - evidence/move_rocker-20260811T213618597144Z.log
+      - evidence/move_rocker-20260811T213621295900Z.log
+      - evidence/move_rocker-20260811T213654297002Z.log
+      - evidence/move_rocker-20260811T213700325617Z.log
+      - evidence/move_rocker-20260811T213706775848Z.log
+      - evidence/move_rocker-20260811T213713555994Z.log
+      - evidence/move_rocker-20260811T213718625752Z.log
+      - evidence/move_rocker-20260811T213723277884Z.log
+  - parameters:
+      direction: 3
+      mode: 1
+      speed: 120
+    behavior: WALKS forward, taking recognisable steps and leading with the LEFT foot. Read from 30
+      sends five seconds apart.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T214307828193Z.log
+      - evidence/move_rocker-20260811T214310861464Z.log
+      - evidence/move_rocker-20260811T214315237557Z.log
+      - evidence/move_rocker-20260811T214317488414Z.log
+      - evidence/move_rocker-20260811T214321027901Z.log
+      - evidence/move_rocker-20260811T214323369097Z.log
+      - evidence/move_rocker-20260811T214325618170Z.log
+      - evidence/move_rocker-20260811T214328199521Z.log
+      - evidence/move_rocker-20260811T214331288728Z.log
+      - evidence/move_rocker-20260811T214334107855Z.log
+      - evidence/move_rocker-20260811T214541279438Z.log
+      - evidence/move_rocker-20260811T214543829080Z.log
+      - evidence/move_rocker-20260811T214547189836Z.log
+      - evidence/move_rocker-20260811T214550279213Z.log
+      - evidence/move_rocker-20260811T214552499066Z.log
+      - evidence/move_rocker-20260811T214555079637Z.log
+      - evidence/move_rocker-20260811T214557508896Z.log
+      - evidence/move_rocker-20260811T214601589612Z.log
+      - evidence/move_rocker-20260811T214604500237Z.log
+      - evidence/move_rocker-20260811T214607290055Z.log
+      - evidence/move_rocker-20260811T214610139017Z.log
+      - evidence/move_rocker-20260811T214612570205Z.log
+      - evidence/move_rocker-20260811T214615210281Z.log
+      - evidence/move_rocker-20260811T214617458340Z.log
+      - evidence/move_rocker-20260811T214619739463Z.log
+      - evidence/move_rocker-20260811T214622322162Z.log
+      - evidence/move_rocker-20260811T214624869947Z.log
+      - evidence/move_rocker-20260811T214627450331Z.log
+      - evidence/move_rocker-20260811T214629969205Z.log
+      - evidence/move_rocker-20260811T214632190630Z.log
+  - parameters:
+      direction: 3
+      mode: 2
+      speed: 120
+    behavior: SLIDES forward — rolling, without stepping at all. Read from 30 sends five seconds apart.
+      This is the vendor's own 'sliding', which is where the seeded slide_left and slide_right rows
+      came from before anyone knew what it meant.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T214341907868Z.log
+      - evidence/move_rocker-20260811T214346139107Z.log
+      - evidence/move_rocker-20260811T214349918698Z.log
+      - evidence/move_rocker-20260811T214352527715Z.log
+      - evidence/move_rocker-20260811T214356908211Z.log
+      - evidence/move_rocker-20260811T214359128238Z.log
+      - evidence/move_rocker-20260811T214401918801Z.log
+      - evidence/move_rocker-20260811T214404498654Z.log
+      - evidence/move_rocker-20260811T214406689302Z.log
+      - evidence/move_rocker-20260811T214408999514Z.log
+      - evidence/move_rocker-20260811T214657720241Z.log
+      - evidence/move_rocker-20260811T214700150619Z.log
+      - evidence/move_rocker-20260811T214702309083Z.log
+      - evidence/move_rocker-20260811T214705789080Z.log
+      - evidence/move_rocker-20260811T214709720398Z.log
+      - evidence/move_rocker-20260811T214713229383Z.log
+      - evidence/move_rocker-20260811T214715510679Z.log
+      - evidence/move_rocker-20260811T214719920259Z.log
+      - evidence/move_rocker-20260811T214722439558Z.log
+      - evidence/move_rocker-20260811T214725050162Z.log
+      - evidence/move_rocker-20260811T214729821168Z.log
+      - evidence/move_rocker-20260811T214732400045Z.log
+      - evidence/move_rocker-20260811T214734800591Z.log
+      - evidence/move_rocker-20260811T214737470284Z.log
+      - evidence/move_rocker-20260811T214739630618Z.log
+      - evidence/move_rocker-20260811T214742480666Z.log
+      - evidence/move_rocker-20260811T214745840523Z.log
+      - evidence/move_rocker-20260811T214748630213Z.log
+      - evidence/move_rocker-20260811T214752650424Z.log
+      - evidence/move_rocker-20260811T214755139405Z.log
+  - parameters:
+      direction: 3
+      mode: 1
+      speed: 50
+    behavior: Read at the time as a right turn in place.
+    evidence:
+      date: '2026-08-11'
+      platform: darwin
+      logs:
+      - evidence/move_rocker-20260811T214152708519Z.log
+      - evidence/move_rocker-20260811T214155678822Z.log
+      - evidence/move_rocker-20260811T214157957424Z.log
+      - evidence/move_rocker-20260811T214201918341Z.log
+      - evidence/move_rocker-20260811T214204199498Z.log
+      - evidence/move_rocker-20260811T214207319121Z.log
+    withdrawn: Wrong, and retracted by the observer during the session. Repeated sends at speed 120
+      showed the robot travelling rather than rotating. A second reading of the same sends — that
+      the byte picks which leg leads, from the left foot leading here — is not recorded as its own
+      observation because it was an interpretation of these same sends rather than a separate watching;
+      it fell over when mode 2 turned out not to step at all.
