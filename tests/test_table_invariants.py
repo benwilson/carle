@@ -97,14 +97,20 @@ def test_real_table_passes_every_invariant():
     assert validate_table(table, seeded_ids=load_seeded_ids()) == []
 
 
-def test_real_table_has_no_encodings_yet():
-    """This slice ships structure, not protocol content. Guards against a stray encoding.
-
-    Delete this when the first real encoding lands — the rules below are what protect
-    the table from then on, and they are written to stand without it.
-    """
+def test_no_encoding_outlives_its_provenance():
+    """Replaces the earlier "no encodings exist yet" guard, which the first decompile
+    retired by design. The durable rule is the one that still holds: bytes may only
+    come from the app, never from a row seeded out of vendor marketing copy."""
     table = load_table()
-    assert [e.id for e in table.entries if e.has_encoding] == []
+    fabricated = [e.id for e in table.entries if e.has_encoding and e.provenance != "decompile"]
+    assert fabricated == []
+
+
+def test_every_encoded_row_records_where_it_came_from():
+    """R11 in miniature: a frame with no derivation cannot be reproduced or checked."""
+    table = load_table()
+    undocumented = [e.id for e in table.entries if e.has_encoding and not e.derivation]
+    assert undocumented == []
 
 
 def test_seed_snapshot_matches_the_vendor_seeded_rows():

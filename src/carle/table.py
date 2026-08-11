@@ -16,7 +16,7 @@ import yaml
 
 STATUSES = ("unmapped", "unlocated", "decoded", "confirmed")
 PROVENANCES = ("vendor-marketing", "decompile")
-CATEGORIES = ("movement", "song", "dance", "gymnastic", "story", "voice")
+CATEGORIES = ("movement", "song", "dance", "gymnastic", "story", "voice", "system")
 
 #: Capability counts Ruko publishes, treated as a FLOOR rather than an equality.
 #: A floor is what the supersede workflow needs: when the decompile shows ten songs are
@@ -31,6 +31,9 @@ PUBLISHED_COUNTS = {
     "gymnastic": 2,
     "story": 4,
     "voice": 14,
+    # Ruko publishes no count for device-level commands like volume; the floor is zero
+    # so the category is still declared and cannot be added without a deliberate edit.
+    "system": 0,
 }
 
 #: Hardware observation logs live here and nowhere else. A `confirmed` row's evidence

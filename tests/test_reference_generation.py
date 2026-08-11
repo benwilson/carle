@@ -212,6 +212,15 @@ def test_evidence_links_resolve_from_the_docs_directory(tmp_path):
     assert "(../evidence/move_forward.log)" in render(load_table(path))
 
 
+def test_category_titles_cover_every_category():
+    """A category missing from the renderer is dropped from the published document
+    while still counting toward the total — silent, and it already happened once."""
+    from carle.table import CATEGORIES
+    from generate_reference import CATEGORY_TITLES
+
+    assert set(CATEGORY_TITLES) == set(CATEGORIES)
+
+
 def test_summary_counts_every_status(doc_text):
     table = load_table()
     assert f"**{len(table.entries)} entries:**" in generated_region(doc_text)
@@ -261,12 +270,33 @@ VERIFICATION_WORDS = re.compile(r"\b(confirmed|verified|observed|issued)\b", re.
 
 VOCABULARY_SECTION = "## How entries are verified"
 
+#: Sections describing the shared envelope rather than any individual command. They
+#: cannot be written without their constants, so the byte-literal guard skips them.
+#: The verification-word and command-id guards still cover them, so a fabricated
+#: per-command claim cannot hide here.
+SPEC_SECTIONS = ("## Transport", "## Frame format")
+
 
 def unguarded_prose(document: str) -> str:
     """Hand-written prose, excluding the section that defines the status vocabulary."""
     prose = handwritten_regions(document)
     head, _, _ = prose.partition(VOCABULARY_SECTION)
     return head
+
+
+def drop_section(prose: str, heading: str) -> str:
+    head, sep, tail = prose.partition(heading)
+    if not sep:
+        return prose
+    _, _, after = tail.partition("\n## ")
+    return head + ("\n## " + after if after else "")
+
+
+def prose_outside_the_spec_sections(document: str) -> str:
+    prose = unguarded_prose(document)
+    for heading in SPEC_SECTIONS:
+        prose = drop_section(prose, heading)
+    return prose
 
 
 @pytest.mark.parametrize(
@@ -286,7 +316,15 @@ def test_hex_guard_does_not_fire_on_ordinary_prose(innocent):
 
 
 def test_handwritten_prose_contains_no_byte_literals(doc_text):
-    assert HEX_LITERAL.findall(unguarded_prose(doc_text)) == []
+    assert HEX_LITERAL.findall(prose_outside_the_spec_sections(doc_text)) == []
+
+
+def test_spec_sections_are_still_covered_by_the_other_guards(doc_text):
+    """The byte-literal exemption must not become a hole. Whatever it lets through is
+    still subject to the verification-word and command-id guards."""
+    prose = unguarded_prose(doc_text)
+    assert VERIFICATION_WORDS.findall(prose) == []
+    assert [e.id for e in load_table().entries if e.id in prose] == []
 
 
 def test_handwritten_prose_makes_no_verification_claim(doc_text):

@@ -24,6 +24,9 @@ from carle.table import STATUSES, Table, load_table, repo_root  # noqa: E402
 BEGIN = "<!-- BEGIN GENERATED COMMAND TABLE -->"
 END = "<!-- END GENERATED COMMAND TABLE -->"
 
+#: Display order and headings. Must cover every value in table.CATEGORIES — a category
+#: missing here is silently dropped from the published document while still counting
+#: toward the total, which is how `volume_set` disappeared the first time.
 CATEGORY_TITLES = {
     "movement": "Movement",
     "song": "Songs",
@@ -31,6 +34,7 @@ CATEGORY_TITLES = {
     "gymnastic": "Gymnastic routines",
     "story": "Stories",
     "voice": "Voice commands",
+    "system": "Device commands",
 }
 
 

@@ -9,25 +9,37 @@ documentation and to keep it honest.
 
 ## Status
 
-**No protocol content is documented yet.** Every command in the table is marked `unmapped`.
+The transport and frame format are documented from the official Android app. **No command has
+been run against a robot yet** — every derived frame is marked `decoded`, not `confirmed`.
 
 | Area | State |
 |---|---|
-| BLE service and characteristic UUIDs | Not documented |
-| Command frame format | Not documented |
-| Command encodings | None — every row is `unmapped` |
+| BLE service and characteristic UUIDs | Documented |
+| Command frame format | Documented |
+| Command encodings | 6 decoded from the app, 0 confirmed on hardware |
+| Notify characteristic contents | Not documented |
 | Audio channel | Not documented |
 | CLI scan / connect / info | Working |
-| Command table structure and honesty gate | Working |
+| Sending commands | Not implemented |
 
-What unblocks the rest: pulling the Carle APK off an Android device and decompiling it, then
-confirming each decoded frame against a physical robot. [`docs/method.md`](docs/method.md)
-describes both procedures. If you have the hardware, that document is the place to start.
+What unblocks the rest: a session with a real robot, and a write path in the CLI.
+[`docs/method.md`](docs/method.md) describes the procedure. If you have the hardware, that
+document is the place to start.
 
-The table in [`docs/protocol-reference.md`](docs/protocol-reference.md) lists the robot's
-*published capabilities* so the work has a checklist. Those rows are seeded from Ruko's
-marketing copy, not from the protocol — the row set is not known to be complete, and the rows
-are not known to map one-to-one onto protocol commands.
+### What the first decompile changed
+
+Ruko's published capability counts do **not** map one-to-one onto protocol commands. The app
+sends a single trigger per media category and lets the robot cycle internally, so the ten
+songs, eight dance tracks, four stories and two gymnastic routines turn out to be four
+commands. Movement collapsed the same way: one parameterized command with an eight-way
+direction field rather than six directional ones.
+
+The original rows are kept and marked `unlocated` with `superseded_by`, not deleted, so the
+collapse stays traceable — and so they are already in place if the unused payload byte turns
+out to select an individual track.
+
+The fourteen voice commands appear nowhere in the Bluetooth layer. They look like onboard
+speech recognition with no protocol surface at all.
 
 ## Quickstart
 
