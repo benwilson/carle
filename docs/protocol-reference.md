@@ -39,7 +39,16 @@ side, which requests no response, and with our own sessions: every one of the se
 committed under [`evidence/`](../evidence/) recorded an empty notifications field, meaning the
 robot sent nothing back during any of those writes. Whether the robot is *capable* of
 notifying under some condition the app never triggers is unknown; what is settled is that the
-app neither expects nor reads inbound data.
+app neither expects nor reads inbound data *on this characteristic*.
+
+State does flow the other way through ordinary reads, on characteristics separate from the
+control service. The app reads three of them while checking for a firmware update: the standard
+Battery Level characteristic `0x2A19` on service `0x180F`, which returns the charge as a single
+byte 0-100, and two vendor version characteristics, `0xFFD3` (patch version) and `0xFFD4`
+(application version), each a little-endian 16-bit value on the OTA interface service
+`0000D0FF-3C17-D293-8E48-14FE2E4DA212`. All three are reads, not notifications — the robot
+answers when asked. These are the only inbound values the app ever consumes, and the battery
+byte is the one a client is most likely to want.
 
 ## Frame format
 
@@ -169,14 +178,39 @@ single frame, so the payload is a *variable-length list of one-byte action codes
 ```
 
 The checksum and envelope are identical to every other family; only the length varies. The
-app's grid offers action codes 1 through 58, each a pre-programmed motion or pose, but what
-each code does is not something the decompile settles — the app binds a code to a grid icon
-and a resource, not to a description. This frame is **not** in the command table below: the
-table models fixed payloads with named parameters, and a variable-length code list does not
-fit that shape without a schema change. It is recorded here instead.
+app's grid offers action codes 1 through 58. The app binds each code to a grid icon rather than
+to a description, so what a code makes the robot *do* is not settled here — but the icon
+resource names lay out a clear structure, and the codes pair odd-then-even the way the limb
+selector does:
 
-**Not yet documented.** What each `0xB2` action code does, and how to stop the robot — nothing
-decoded here halts anything, though the remote carries an unexamined centre key that may do it.
+| Codes | Icon group | Apparent meaning |
+|---|---|---|
+| 1-12 | `left1`-`left6` | the six left-side limb poses |
+| 13-24 | `right1`-`right6` | the six right-side limb poses |
+| 25-26 | `action_yao` | the waist sway |
+| 31-38 | `qianhuabu`, `houhuabu` | forward and backward slide-steps |
+| 39-48 | `smile1`-`smile5` | facial expressions |
+| 49-58 | `music1`-`music5` | music tracks |
+
+That maps the sequence vocabulary onto the same repertoire the other families reach — the
+twelve limb joints, the waist, sliding, plus expressions and music the command table does not
+otherwise expose. It is inference from the app's artwork, not from watching the robot, so it is
+a map of what the codes are *named*, not proof of what they do.
+
+This frame is **not** in the command table below: the table models fixed payloads with named
+parameters, and a variable-length code list does not fit that shape without a schema change. It
+is recorded here instead.
+
+One more write does not follow the envelope at all. A couple of seconds after connecting, the
+device screen writes a bare single byte `0x01` to the control characteristic — twice, on two
+timers — with no family, length or checksum around it. Nothing in the app reacts to a response,
+and its purpose is unrecorded; it has the shape of a post-connection handshake or wake, but that
+is a guess. A client that reproduces the app's exact startup may need it; a client that drives
+the robot without it may not.
+
+**Not yet documented.** What each `0xB2` action code actually does on hardware, and how to stop
+the robot — nothing decoded here halts anything, though the remote carries an unexamined centre
+key that may do it.
 
 ## Audio channel
 
@@ -187,6 +221,65 @@ pairable from ordinary system Bluetooth settings. **That understanding comes fro
 listing, not from vendor documentation or observation, and it has not been checked.** Whether
 the two channels are genuinely independent — and so whether a program can drive motion while
 audio plays — is an open question, and one of the more interesting ones.
+
+## Firmware update (OTA)
+
+The robot carries a second BLE surface, entirely separate from the control service, for
+updating its firmware. This is a Realtek-style DFU stack — the 128-bit UUID base
+`3C17-D293-8E48-14FE2E4DA212` and the opcode set below are that vendor's over-the-air profile.
+The whole of the following is derived from the decompiled app's `OTAClient` and `OTAUpdate`
+classes, not from hardware; nothing here has been run against a robot.
+
+Two services carry it. The **OTA interface** service `0000D0FF-3C17-D293-8E48-14FE2E4DA212`
+sits alongside the control service on the normal connection and exposes readable metadata plus
+a way in:
+
+| Characteristic | Role |
+|---|---|
+| `0xFFD1` | write `[0x01]` to reboot the robot into DFU mode |
+| `0xFFD2` | the device Bluetooth address |
+| `0xFFD3` | patch version, 16-bit little-endian, read |
+| `0xFFD4` | application version, 16-bit little-endian, read |
+
+Once the robot reboots, it re-advertises and the **DFU** service
+`00006287-3C17-D293-8E48-14FE2E4DA212` carries the transfer. Its control point
+`00006487-3C17-D293-8E48-14FE2E4DA212` takes commands and notifies responses; the data
+characteristic `00006387-3C17-D293-8E48-14FE2E4DA212` takes the firmware payload in 20-byte
+writes without response.
+
+The control point speaks a small opcode language. The first byte of a write is the command; the
+first byte of a notification is `0x10`, followed by the request opcode it answers and a result
+code:
+
+| Opcode | Command |
+|---|---|
+| `0x01` | start — carries 16 bytes of image header |
+| `0x02` | receive firmware image — carries the image signature |
+| `0x03` | validate the received image |
+| `0x04` | activate the new image and reset |
+| `0x05` | reset the system |
+| `0x06` | report received image info |
+| `0x07` | request packet-receipt notifications |
+| `0x10` | response (device to app) |
+| `0x11` | packet-receipt notification |
+
+Result codes in a `0x10` response are `1` success, `2` opcode not supported, `3` invalid
+parameter, `4` operation failed, `5` data size exceeds, `6` CRC error.
+
+The firmware file itself opens with a 12-byte little-endian header — offset, signature,
+version, checksum, length (in 4-byte words), an OTA flag and a reserved byte — with the image
+data beginning at file offset 28. The transfer runs: enable notifications on the control point,
+start with the header, receive-image with the signature, stream the data in 20-byte units about
+15 ms apart, validate, then activate-and-reset. A failed validation triggers an immediate reset
+instead.
+
+The app does not carry firmware in the package. It fetches a manifest from
+`http://d.ihunuo.com/api/v2/ota/{appID}?android-package-name={package}` — a real vendor
+endpoint — over plain HTTP, and downloads the image from the `otaDownloadLink` the manifest
+names. The app gates the flow on the battery read above, refusing to start below 60 percent, and
+tells the user to keep the screen on while it runs. Both are the app's own behaviour, recorded
+here because a client re-implementing this path inherits the same constraints the hardware
+imposes.
 
 ## Autonomous behaviour
 
