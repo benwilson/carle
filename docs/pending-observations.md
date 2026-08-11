@@ -78,3 +78,19 @@ articulation, odd raising and even returning: arms forward (1-4), shoulders late
 | `p5` = 1, 2, 3, 8, 64, 128, 255 | No movement of any kind, across two separate sweeps. The byte the app never writes appears to produce no motion. |
 | — | The observer noted the LED face and ears changing during the sweep, but flagged that both do so during idle as well, so the activity is NOT attributable. Untested hypothesis: `p5` drives the face/ear display, which nothing else in the movement frame reaches. Tested by alternating 1 and 255 twelve times: the display did not track the send rhythm. Hypothesis unsupported. |
 | `p5=1` held 60s | 22 back-to-back sends over a full minute, which also suppresses the idle routine for the whole window. Nothing. Across four separate methods — value sweep, sustained bursts, extreme alternation, and a held minute — this byte has no observable effect. |
+
+## move_rocker payload byte 0 (`mode`)
+
+Ten sends at each mode, identical `direction=3` and `speed=120`, five-second gap between.
+Attribution is by the order the observer reported, which matched the order sent.
+
+| Parameters | What the robot did |
+|---|---|
+| `mode=0 direction=3 speed=50` | Walked forward. (Earlier session.) |
+| `mode=1 direction=3 speed=120` | Turned right, in place. |
+| `mode=2 direction=3 speed=120` | Walked forward. |
+
+So the byte selects how `direction` is interpreted: 1 rotates on the spot, 0 and 2 translate.
+This was predicted before testing, from a photograph of the 2.4 GHz remote: it carries two
+four-way pads, one centred on a walking figure and the other on rotation arrows. The app
+writes 1 or 2 into this byte, which is the two pads.

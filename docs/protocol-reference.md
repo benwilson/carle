@@ -63,7 +63,7 @@ Movement frames (`0xB6`) carry six payload bytes:
 
 | Byte | Meaning |
 |---|---|
-| 0 | mode — the app writes 1 or 2; 0 also drives the robot, so it is not an enable |
+| 0 | mode — 1 turns on the spot; 0 and 2 translate |
 | 1 | speed |
 | 2 | direction, 1-8 |
 | 3 | waist — 1 leans left, 2 returns upright |
@@ -71,8 +71,13 @@ Movement frames (`0xB6`) carry six payload bytes:
 | 5 | no observable effect; see below |
 
 Direction runs counter-clockwise from 1 at RIGHT, so 3 is UP, 5 is LEFT and 7 is DOWN, with 0
-meaning no movement. Setting a direction and a speed makes the robot walk; it takes its steps
+meaning no movement. Setting a direction and a speed makes the robot move; it takes its steps
 and stops on its own.
+
+Byte 0 decides how the direction is applied. At 1 the robot rotates on the spot; at 0 and 2 it
+travels. The app writes 1 or 2 and never 0, which matches the vendor's 2.4 GHz remote — it
+carries two separate four-way pads, one marked with a walking figure and the other with
+rotation arrows.
 
 The limb selector takes twelve values arranged as six pairs, running left then right through
 each articulation. Odd values raise and even values return:
@@ -105,9 +110,9 @@ minute held down with the idle routine suppressed throughout. That is not proof 
 dead — it may need a mode nothing here sets, or act on something with no outward sign — but
 it is a thorough negative result, and worth recording so the next person does not repeat it.
 
-**Not yet documented.** The gyro family's payload layout, the programmed-sequence format, and
-what byte 0 selects. The app writes 1 or 2 there and 0 also drives the robot, so it is not an
-enable, but what it changes is unknown.
+**Not yet documented.** The gyro family's payload layout and the programmed-sequence format.
+Also unknown: how to stop the robot. Nothing decoded here halts anything, though the remote
+carries an unexamined centre key that may do it.
 
 ## Audio channel
 
