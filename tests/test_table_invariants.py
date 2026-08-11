@@ -1,8 +1,9 @@
 """The honesty gate.
 
 These tests are the mechanism that keeps the command table trustworthy as it fills.
-Every one of them is written to fail against a deliberately malformed table, and each
-malformed case fails for its own distinct reason rather than a shared parse error.
+Every rule has at least one deliberately malformed fixture, and each fails on its own
+rule code rather than on shared prose — so the messages can be reworded without quietly
+destroying a test's ability to discriminate.
 
 If you are changing these, read CONTRIBUTING.md first — the rules they enforce are the
 point of the repository, not incidental scaffolding.
@@ -10,6 +11,7 @@ point of the repository, not incidental scaffolding.
 
 from __future__ import annotations
 
+import datetime as dt
 import textwrap
 from pathlib import Path
 
@@ -17,7 +19,9 @@ import pytest
 import yaml
 
 from carle.table import (
+    CATEGORIES,
     PUBLISHED_COUNTS,
+    STATUSES,
     TableError,
     load_seeded_ids,
     load_table,
@@ -30,6 +34,15 @@ VALID_ROW = {
     "category": "song",
     "provenance": "vendor-marketing",
     "status": "unmapped",
+}
+
+CONFIRMED_ROW = {
+    **VALID_ROW,
+    "provenance": "decompile",
+    "status": "confirmed",
+    "encoding": "AA0102",
+    "derivation": "CommandBuilder.playSong",
+    "observed_behavior": "Robot plays a song",
 }
 
 
@@ -64,6 +77,18 @@ def problems_for(tmp_path: Path, rows: list[dict], **kwargs) -> list[str]:
     return validate_table(table, root=tmp_path, **kwargs)
 
 
+def evidence_log(tmp_path: Path, name: str = "song_01.log", body: str = "observed") -> str:
+    directory = tmp_path / "evidence"
+    directory.mkdir(exist_ok=True)
+    (directory / name).write_text(body, encoding="utf-8")
+    return f"evidence/{name}"
+
+
+def codes(problems: list[str]) -> set[str]:
+    """Extract the bracketed rule codes so assertions do not depend on prose."""
+    return {p.split("[", 1)[1].split("]", 1)[0] for p in problems if "[" in p}
+
+
 # --- The real table ---------------------------------------------------------
 
 
@@ -73,25 +98,61 @@ def test_real_table_passes_every_invariant():
 
 
 def test_real_table_has_no_encodings_yet():
-    """This slice ships structure, not protocol content. Guards against a stray encoding."""
+    """This slice ships structure, not protocol content. Guards against a stray encoding.
+
+    Delete this when the first real encoding lands — the rules below are what protect
+    the table from then on, and they are written to stand without it.
+    """
     table = load_table()
     assert [e.id for e in table.entries if e.has_encoding] == []
+
+
+def test_seed_snapshot_matches_the_vendor_seeded_rows():
+    """The anti-deletion guard reads its expectations from a text file in the same diff.
+
+    Without this, a contributor could delete an inconvenient row and 'fix the test' by
+    deleting the matching line from the snapshot, and every gate would stay green.
+    """
+    table = load_table()
+    seeded = set(load_seeded_ids())
+    vendor_rows = {e.id for e in table.entries if e.provenance == "vendor-marketing"}
+    assert seeded == vendor_rows
+
+
+def test_every_category_has_a_published_floor():
+    """A category with no floor is unguarded — movement was, and rows could vanish."""
+    assert set(PUBLISHED_COUNTS) == set(CATEGORIES)
 
 
 # --- Evidence rules (AE1) ---------------------------------------------------
 
 
 def test_confirmed_without_hardware_evidence_fails(tmp_path):
-    row = {
-        **VALID_ROW,
-        "provenance": "decompile",
-        "status": "confirmed",
-        "encoding": "AA0102",
-        "derivation": "CommandBuilder.playSong",
-        "observed_behavior": "Robot plays a song",
+    row = {**CONFIRMED_ROW}
+    assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
+
+
+@pytest.mark.parametrize("field", ["encoding", "derivation", "observed_behavior"])
+def test_confirmed_missing_any_required_field_fails(tmp_path, field):
+    row = {**CONFIRMED_ROW, field: None}
+    row["hardware_evidence"] = {
+        "date": "2026-08-11",
+        "platform": "macOS",
+        "log": evidence_log(tmp_path),
     }
-    problems = problems_for(tmp_path, [row])
-    assert any("requires hardware_evidence" in p for p in problems)
+    assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
+
+
+@pytest.mark.parametrize("field", ["encoding", "derivation", "observed_behavior"])
+def test_confirmed_with_an_empty_string_field_fails(tmp_path, field):
+    """An empty string satisfied the old `is None` check while rendering as nothing."""
+    row = {**CONFIRMED_ROW, field: ""}
+    row["hardware_evidence"] = {
+        "date": "2026-08-11",
+        "platform": "macOS",
+        "log": evidence_log(tmp_path),
+    }
+    assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
 
 
 def test_decoded_carrying_hardware_evidence_fails(tmp_path):
@@ -102,109 +163,138 @@ def test_decoded_carrying_hardware_evidence_fails(tmp_path):
         "status": "decoded",
         "encoding": "AA0102",
         "derivation": "CommandBuilder.playSong",
-        "hardware_evidence": {"date": "2026-08-11", "platform": "macOS", "log": "evidence/x.log"},
-    }
-    problems = problems_for(tmp_path, [row])
-    assert any("must not carry hardware_evidence" in p for p in problems)
-
-
-def test_hardware_evidence_log_must_exist_on_disk(tmp_path):
-    """A presence check would let `log: anything` pass. The path has to resolve."""
-    row = {
-        **VALID_ROW,
-        "provenance": "decompile",
-        "status": "confirmed",
-        "encoding": "AA0102",
-        "derivation": "CommandBuilder.playSong",
-        "observed_behavior": "Robot plays a song",
         "hardware_evidence": {
             "date": "2026-08-11",
             "platform": "macOS",
-            "log": "evidence/does-not-exist.log",
+            "log": evidence_log(tmp_path),
         },
     }
-    problems = problems_for(tmp_path, [row])
-    assert any("does not exist on disk" in p for p in problems)
+    assert "state.decoded-evidence" in codes(problems_for(tmp_path, [row]))
 
 
-def test_hardware_evidence_log_that_exists_passes(tmp_path):
-    (tmp_path / "evidence").mkdir()
-    (tmp_path / "evidence" / "song_01.log").write_text("observed", encoding="utf-8")
-    row = {
-        **VALID_ROW,
-        "provenance": "decompile",
-        "status": "confirmed",
-        "encoding": "AA0102",
-        "derivation": "CommandBuilder.playSong",
-        "observed_behavior": "Robot plays a song",
-        "hardware_evidence": {
-            "date": "2026-08-11",
-            "platform": "macOS",
-            "log": "evidence/song_01.log",
-        },
-    }
-    problems = [p for p in problems_for(tmp_path, [row]) if p.startswith("song_01")]
-    assert problems == []
-
-
-def test_hardware_evidence_date_must_be_iso(tmp_path):
-    (tmp_path / "evidence").mkdir()
-    (tmp_path / "evidence" / "song_01.log").write_text("observed", encoding="utf-8")
-    row = {
-        **VALID_ROW,
-        "provenance": "decompile",
-        "status": "confirmed",
-        "encoding": "AA0102",
-        "derivation": "CommandBuilder.playSong",
-        "observed_behavior": "Robot plays a song",
-        "hardware_evidence": {
-            "date": "last Tuesday",
-            "platform": "macOS",
-            "log": "evidence/song_01.log",
-        },
-    }
-    problems = problems_for(tmp_path, [row])
-    assert any("is not an ISO 8601 date" in p for p in problems)
-
-
-def test_decoded_without_derivation_fails(tmp_path):
-    """R11: a decoded frame must record where in the app it came from."""
+@pytest.mark.parametrize("field", ["encoding", "derivation"])
+def test_decoded_missing_a_required_field_fails(tmp_path, field):
     row = {
         **VALID_ROW,
         "provenance": "decompile",
         "status": "decoded",
         "encoding": "AA0102",
+        "derivation": "CommandBuilder.playSong",
+        field: "",
     }
-    problems = problems_for(tmp_path, [row])
-    assert any("requires a derivation" in p for p in problems)
+    assert "state.decoded-missing" in codes(problems_for(tmp_path, [row]))
+
+
+# --- Evidence must RESOLVE, not merely exist --------------------------------
+#
+# These are the bypasses a reviewer demonstrated: `log: LICENSE`, `log: .`, and
+# `log: /etc/hosts` all earned `status: confirmed` under a bare existence check.
+
+
+def _confirmed_with_log(tmp_path: Path, log: str) -> list[str]:
+    row = {
+        **CONFIRMED_ROW,
+        "hardware_evidence": {"date": "2026-08-11", "platform": "macOS", "log": log},
+    }
+    return problems_for(tmp_path, [row])
+
+
+def test_evidence_log_that_exists_in_evidence_dir_passes(tmp_path):
+    log = evidence_log(tmp_path)
+    assert [p for p in _confirmed_with_log(tmp_path, log) if p.startswith("song_01")] == []
+
+
+def test_evidence_log_pointing_outside_evidence_dir_fails(tmp_path):
+    (tmp_path / "LICENSE").write_text("MIT", encoding="utf-8")
+    assert "evidence.log" in codes(_confirmed_with_log(tmp_path, "LICENSE"))
+
+
+def test_evidence_log_with_an_absolute_path_fails(tmp_path):
+    """`root / log` silently discards root when log is absolute."""
+    assert "evidence.log" in codes(_confirmed_with_log(tmp_path, "/etc/hosts"))
+
+
+def test_evidence_log_escaping_via_traversal_fails(tmp_path):
+    assert "evidence.log" in codes(_confirmed_with_log(tmp_path, "evidence/../LICENSE"))
+
+
+def test_evidence_log_pointing_at_a_directory_fails(tmp_path):
+    (tmp_path / "evidence").mkdir()
+    assert "evidence.log" in codes(_confirmed_with_log(tmp_path, "evidence"))
+
+
+def test_evidence_log_pointing_at_the_readme_fails(tmp_path):
+    log = evidence_log(tmp_path, name="README.md", body="explanatory text")
+    assert "evidence.log" in codes(_confirmed_with_log(tmp_path, log))
+
+
+def test_empty_evidence_log_fails(tmp_path):
+    log = evidence_log(tmp_path, body="")
+    assert "evidence.log" in codes(_confirmed_with_log(tmp_path, log))
+
+
+def test_missing_evidence_log_fails(tmp_path):
+    (tmp_path / "evidence").mkdir()
+    assert "evidence.log" in codes(_confirmed_with_log(tmp_path, "evidence/nope.log"))
+
+
+def test_evidence_date_must_be_iso(tmp_path):
+    row = {
+        **CONFIRMED_ROW,
+        "hardware_evidence": {
+            "date": "last Tuesday",
+            "platform": "macOS",
+            "log": evidence_log(tmp_path),
+        },
+    }
+    assert "evidence.date" in codes(problems_for(tmp_path, [row]))
+
+
+def test_evidence_date_in_the_future_fails(tmp_path):
+    """An observation cannot have happened tomorrow."""
+    row = {
+        **CONFIRMED_ROW,
+        "hardware_evidence": {
+            "date": (dt.date.today() + dt.timedelta(days=1)).isoformat(),
+            "platform": "macOS",
+            "log": evidence_log(tmp_path),
+        },
+    }
+    assert "evidence.date" in codes(problems_for(tmp_path, [row]))
+
+
+def test_evidence_missing_platform_fails(tmp_path):
+    row = {
+        **CONFIRMED_ROW,
+        "hardware_evidence": {"date": "2026-08-11", "log": evidence_log(tmp_path)},
+    }
+    assert any("missing platform" in p for p in problems_for(tmp_path, [row]))
 
 
 # --- State rules ------------------------------------------------------------
 
 
-def test_unmapped_carrying_an_encoding_fails(tmp_path):
-    row = {**VALID_ROW, "encoding": "AA0102"}
-    problems = problems_for(tmp_path, [row])
-    assert any("must not carry encoding" in p for p in problems)
+@pytest.mark.parametrize("status", ["unmapped", "unlocated"])
+@pytest.mark.parametrize("field", ["encoding", "derivation", "observed_behavior"])
+def test_unearned_status_carrying_content_fails(tmp_path, status, field):
+    row = {**VALID_ROW, "status": status, field: "something"}
+    assert "state.unearned" in codes(problems_for(tmp_path, [row]))
 
 
-def test_unlocated_carrying_an_encoding_fails(tmp_path):
-    row = {**VALID_ROW, "status": "unlocated", "encoding": "AA0102"}
-    problems = problems_for(tmp_path, [row])
-    assert any("must not carry encoding" in p for p in problems)
-
-
-def test_unlocated_without_an_encoding_passes(tmp_path):
+def test_unlocated_without_content_passes(tmp_path):
     """'Searched and not found' is a legitimate resting state, distinct from 'unmapped'."""
     row = {**VALID_ROW, "status": "unlocated"}
-    problems = [p for p in problems_for(tmp_path, [row]) if p.startswith("song_01")]
-    assert problems == []
+    assert [p for p in problems_for(tmp_path, [row]) if p.startswith("song_01")] == []
 
 
 def test_unknown_status_is_rejected(tmp_path):
     row = {**VALID_ROW, "status": "probably-works"}
     with pytest.raises(TableError, match="expected one of"):
         load_table(write_table(tmp_path, [row]))
+
+
+def test_status_vocabulary_is_the_documented_four():
+    assert STATUSES == ("unmapped", "unlocated", "decoded", "confirmed")
 
 
 # --- Provenance rule --------------------------------------------------------
@@ -214,13 +304,17 @@ def test_vendor_marketing_row_cannot_carry_an_encoding(tmp_path):
     """A marketing row describes a capability; only the decompile produces an encoding."""
     row = {
         **VALID_ROW,
-        "provenance": "vendor-marketing",
         "status": "decoded",
         "encoding": "AA0102",
         "derivation": "CommandBuilder.playSong",
     }
-    problems = problems_for(tmp_path, [row])
-    assert any("must not carry an encoding" in p for p in problems)
+    assert "provenance.marketing-encoding" in codes(problems_for(tmp_path, [row]))
+
+
+def test_unknown_provenance_is_rejected(tmp_path):
+    row = {**VALID_ROW, "provenance": "vibes"}
+    with pytest.raises(TableError, match="expected one of"):
+        load_table(write_table(tmp_path, [row]))
 
 
 # --- Coverage rules (AE2) ---------------------------------------------------
@@ -229,29 +323,41 @@ def test_vendor_marketing_row_cannot_carry_an_encoding(tmp_path):
 def test_dropping_a_seeded_id_fails(tmp_path):
     rows = seeded_rows()
     dropped = rows.pop(0)
-    problems = problems_for(tmp_path, rows, seeded_ids=[dropped["id"]])
-    assert any("seeded id is absent" in p for p in problems)
+    assert "table.seeded-missing" in codes(problems_for(tmp_path, rows, seeded_ids=[dropped["id"]]))
 
 
 def test_retaining_a_seeded_id_with_superseded_by_passes(tmp_path):
     """The decompile may merge rows. That is recorded, not erased."""
     rows = seeded_rows()
+    rows.append({**VALID_ROW, "id": "song_all", "capability": "All songs, one opcode"})
     rows[0] = {**rows[0], "superseded_by": ["song_all"]}
     problems = problems_for(tmp_path, rows, seeded_ids=[rows[0]["id"]])
-    assert [p for p in problems if "seeded id is absent" in p] == []
+    assert codes(problems) == set()
 
 
-def test_nine_songs_instead_of_ten_fails(tmp_path):
+def test_superseded_by_naming_a_missing_row_fails(tmp_path):
+    """A supersede that points nowhere is a deletion with better manners."""
+    rows = seeded_rows()
+    rows[0] = {**rows[0], "superseded_by": ["song_that_does_not_exist"]}
+    assert "table.superseded-dangling" in codes(problems_for(tmp_path, rows))
+
+
+def test_a_category_below_its_published_floor_fails(tmp_path):
     rows = [r for r in seeded_rows() if r["id"] != "song_10"]
-    problems = problems_for(tmp_path, rows)
-    assert any("category 'song' has 9 rows; Ruko publishes 10" in p for p in problems)
+    assert "table.count-floor" in codes(problems_for(tmp_path, rows))
+
+
+def test_a_category_above_its_floor_passes(tmp_path):
+    """Adding a replacement row must not break the build — that is the supersede path."""
+    rows = seeded_rows()
+    rows.append({**VALID_ROW, "id": "song_all", "capability": "All songs, one opcode"})
+    assert "table.count-floor" not in codes(problems_for(tmp_path, rows))
 
 
 def test_duplicate_ids_fail(tmp_path):
     rows = seeded_rows()
     rows.append({**rows[0]})
-    problems = problems_for(tmp_path, rows)
-    assert any("id appears 2 times" in p for p in problems)
+    assert "table.duplicate-id" in codes(problems_for(tmp_path, rows))
 
 
 # --- Structural rules -------------------------------------------------------
@@ -263,11 +369,52 @@ def test_unknown_field_is_rejected(tmp_path):
         load_table(write_table(tmp_path, [row]))
 
 
+def test_missing_required_field_is_rejected(tmp_path):
+    row = {k: v for k, v in VALID_ROW.items() if k != "capability"}
+    with pytest.raises(TableError, match="missing required field"):
+        load_table(write_table(tmp_path, [row]))
+
+
+def test_unknown_category_is_rejected(tmp_path):
+    row = {**VALID_ROW, "category": "interpretive-dance"}
+    with pytest.raises(TableError, match="expected one of"):
+        load_table(write_table(tmp_path, [row]))
+
+
+def test_non_mapping_row_is_rejected(tmp_path):
+    with pytest.raises(TableError, match="must be a mapping"):
+        load_table(write_table(tmp_path, ["just a string"]))
+
+
+def test_non_mapping_hardware_evidence_is_rejected(tmp_path):
+    row = {**CONFIRMED_ROW, "hardware_evidence": "I tested it"}
+    with pytest.raises(TableError, match="hardware_evidence must be a mapping"):
+        load_table(write_table(tmp_path, [row]))
+
+
+def test_non_list_superseded_by_is_rejected(tmp_path):
+    row = {**VALID_ROW, "superseded_by": "song_all"}
+    with pytest.raises(TableError, match="superseded_by must be a list"):
+        load_table(write_table(tmp_path, [row]))
+
+
 def test_missing_coverage_note_is_rejected(tmp_path):
     path = tmp_path / "commands.yaml"
     path.write_text(yaml.safe_dump({"commands": [VALID_ROW]}), encoding="utf-8")
     with pytest.raises(TableError, match="coverage_note"):
         load_table(path)
+
+
+def test_missing_commands_list_is_rejected(tmp_path):
+    path = tmp_path / "commands.yaml"
+    path.write_text(yaml.safe_dump({"coverage_note": "note"}), encoding="utf-8")
+    with pytest.raises(TableError, match="'commands' list"):
+        load_table(path)
+
+
+def test_missing_file_is_rejected(tmp_path):
+    with pytest.raises(TableError, match="does not exist"):
+        load_table(tmp_path / "absent.yaml")
 
 
 def test_malformed_yaml_is_rejected(tmp_path):

@@ -80,7 +80,7 @@ This is the step that separates this reference from a plausible guess.
 
 ```bash
 uv run carle scan
-uv run carle info --address <address>
+uv run carle info <address>
 ```
 
 `info` prints the peripheral's services and characteristics verbatim; that output is what the

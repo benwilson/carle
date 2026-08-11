@@ -73,10 +73,6 @@ def _check_macos_authorization(authorization: str | None) -> int | None:
 
 
 def _run_scan(args: argparse.Namespace, backend: Backend) -> int:
-    blocked = _check_macos_authorization(macos_authorization())
-    if blocked is not None:
-        return blocked
-
     try:
         peripherals = asyncio.run(backend.discover(args.timeout))
     except TransportError as exc:
@@ -139,8 +135,25 @@ def _run_info(args: argparse.Namespace, backend: Backend) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None, backend: Backend | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    backend: Backend | None = None,
+    authorization: str | None = "auto",
+) -> int:
     args = build_parser().parse_args(argv)
+
+    if authorization == "auto":
+        # Only the real backend touches CoreBluetooth, so only it can be SIGABRT'd.
+        # An injected backend is a test double and needs no permission.
+        authorization = macos_authorization() if backend is None else None
+
+    # Every command reaches CoreBluetooth — `connect` and `info` build a BleakClient,
+    # which initializes a central manager exactly as a scan does. Guarding only `scan`
+    # left those two dying by SIGABRT with no output, the failure this check exists for.
+    blocked = _check_macos_authorization(authorization)
+    if blocked is not None:
+        return blocked
+
     backend = backend or BleakBackend()
 
     if args.command == "scan":

@@ -44,7 +44,7 @@ uv run carle scan
 itself. With the robot switched on and nearby you should see it listed. Then:
 
 ```bash
-uv run carle info --address <address-from-scan>
+uv run carle info <address-from-scan>
 ```
 
 `info` prints the peripheral's GATT services and characteristics exactly as discovered. That

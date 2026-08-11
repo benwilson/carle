@@ -11,6 +11,7 @@ is organized to avoid.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
@@ -70,17 +71,20 @@ class BleakBackend:
             raise TransportError(f"bleak is not installed: {exc}") from exc
 
         try:
-            devices = await BleakScanner.discover(timeout=timeout)
+            # return_adv is required for signal strength: bleak 3.x's BLEDevice declares
+            # __slots__ = ("address", "name", "details") with no rssi, so reading it off
+            # the device always yielded None and the scan output never showed it.
+            discovered = await BleakScanner.discover(timeout=timeout, return_adv=True)
         except Exception as exc:
-            raise TransportError(f"scan failed: {exc}") from exc
+            raise TransportError(f"scan failed: {type(exc).__name__}: {exc}") from exc
 
         return [
             Peripheral(
                 address=str(device.address),
                 name=device.name,
-                rssi=getattr(device, "rssi", None),
+                rssi=getattr(advertisement, "rssi", None),
             )
-            for device in devices
+            for device, advertisement in discovered.values()
         ]
 
     async def services(self, address: str, timeout: float = DEFAULT_SCAN_TIMEOUT) -> list[Service]:
@@ -89,7 +93,7 @@ class BleakBackend:
         except ImportError as exc:  # pragma: no cover - dependency is declared
             raise TransportError(f"bleak is not installed: {exc}") from exc
 
-        try:
+        async def enumerate_services() -> list[Service]:
             async with BleakClient(address, timeout=timeout) as client:
                 return [
                     Service(
@@ -106,8 +110,24 @@ class BleakBackend:
                     )
                     for service in client.services
                 ]
+
+        try:
+            # BleakClient's own timeout bounds only the address lookup and connect.
+            # GATT discovery after that is an unbounded await, so a peripheral that
+            # accepts the connection and then stalls would hang forever holding the
+            # link open. Bound the whole operation.
+            return await asyncio.wait_for(enumerate_services(), timeout=timeout * 2)
+        except (TimeoutError, asyncio.TimeoutError) as exc:
+            raise TransportError(
+                f"timed out after {timeout * 2:g}s connecting to {address} or "
+                "enumerating its services"
+            ) from exc
         except Exception as exc:
-            raise TransportError(f"could not connect to {address}: {exc}") from exc
+            # The type name matters: bleak raises a bare asyncio.TimeoutError whose
+            # str() is empty, which produced "could not connect to AA:BB: " with no reason.
+            raise TransportError(
+                f"could not connect to {address}: {type(exc).__name__}: {exc}"
+            ) from exc
 
 
 def filter_robots(peripherals: list[Peripheral]) -> list[Peripheral]:

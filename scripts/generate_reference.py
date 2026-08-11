@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from carle.table import Table, load_table, repo_root  # noqa: E402
+from carle.table import STATUSES, Table, load_table, repo_root  # noqa: E402
 
 BEGIN = "<!-- BEGIN GENERATED COMMAND TABLE -->"
 END = "<!-- END GENERATED COMMAND TABLE -->"
@@ -33,12 +33,16 @@ CATEGORY_TITLES = {
     "voice": "Voice commands",
 }
 
-STATUS_LABELS = {
-    "unmapped": "unmapped",
-    "unlocated": "unlocated",
-    "decoded": "decoded",
-    "confirmed": "confirmed",
-}
+
+def cell(value: object) -> str:
+    """Escape a value for a markdown table cell.
+
+    Unescaped pipes let a YAML string forge extra columns: a `capability` containing
+    `| confirmed | \\`AA0102\\` |` renders as a confirmed row with an encoding while the
+    entry itself is unmapped and passes every invariant.
+    """
+    text = str(value).replace("|", "\\|")
+    return " ".join(text.split())
 
 
 def default_doc_path() -> Path:
@@ -60,7 +64,9 @@ def render(table: Table) -> str:
     counts: dict[str, int] = {}
     for entry in table.entries:
         counts[entry.status] = counts.get(entry.status, 0) + 1
-    summary = ", ".join(f"{counts[s]} {STATUS_LABELS[s]}" for s in STATUS_LABELS if s in counts)
+    # Ordered by STATUSES so a status added to the schema cannot be silently dropped
+    # from the summary while still being counted in the total.
+    summary = ", ".join(f"{counts[s]} {s}" for s in STATUSES if s in counts)
     lines.append(f"**{len(table.entries)} entries:** {summary}.")
     lines.append("")
 
@@ -70,22 +76,30 @@ def render(table: Table) -> str:
             continue
         lines.append(f"### {title}")
         lines.append("")
-        lines.append("| ID | Capability | Status | Encoding | Evidence |")
-        lines.append("|---|---|---|---|---|")
+        lines.append("| ID | Capability | Status | Encoding | Observed behavior | Evidence |")
+        lines.append("|---|---|---|---|---|---|")
         for entry in entries:
-            encoding = f"`{entry.encoding}`" if entry.encoding else "—"
+            encoding = f"`{cell(entry.encoding)}`" if entry.encoding else "—"
+            observed = cell(entry.observed_behavior) if entry.observed_behavior else "—"
+
             evidence = "—"
             if entry.hardware_evidence:
                 log = entry.hardware_evidence.get("log", "")
-                date = entry.hardware_evidence.get("date", "")
-                evidence = f"[{date}]({log})" if log else str(date)
+                date = cell(entry.hardware_evidence.get("date", ""))
+                # Log paths are repo-root-relative but this document lives in docs/,
+                # so a bare link would resolve to docs/evidence/... and 404.
+                evidence = f"[{date}](../{cell(log)})" if log else date
             elif entry.derivation:
-                evidence = f"derived: `{entry.derivation}`"
-            capability = entry.capability
+                evidence = f"derived: `{cell(entry.derivation)}`"
+
+            capability = cell(entry.capability)
             if entry.superseded_by:
-                capability += f" (superseded by {', '.join(entry.superseded_by)})"
+                targets = ", ".join(cell(t) for t in entry.superseded_by)
+                capability += f" (superseded by {targets})"
+
             lines.append(
-                f"| `{entry.id}` | {capability} | {entry.status} | {encoding} | {evidence} |"
+                f"| `{cell(entry.id)}` | {capability} | {entry.status} "
+                f"| {encoding} | {observed} | {evidence} |"
             )
         lines.append("")
 
@@ -94,6 +108,14 @@ def render(table: Table) -> str:
 
 def splice(document: str, body: str) -> str:
     """Replace the region between the markers, leaving hand-written prose intact."""
+    if document.count(BEGIN) != 1 or document.count(END) != 1:
+        # Only the first marker pair is ever regenerated, so a second one would sit in
+        # the untouched tail and survive --check verbatim — a fabricated table wearing
+        # the same "GENERATED" banner as the real one.
+        raise SystemExit(
+            f"The reference document must contain exactly one {BEGIN} and one {END}; "
+            f"found {document.count(BEGIN)} and {document.count(END)}."
+        )
     start = document.find(BEGIN)
     end = document.find(END)
     if start == -1 or end == -1:

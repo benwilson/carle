@@ -18,15 +18,24 @@ STATUSES = ("unmapped", "unlocated", "decoded", "confirmed")
 PROVENANCES = ("vendor-marketing", "decompile")
 CATEGORIES = ("movement", "song", "dance", "gymnastic", "story", "voice")
 
-#: Capability counts Ruko publishes. The invariant suite asserts the table still
-#: carries all of them, so a row cannot be quietly dropped when it proves hard to map.
+#: Capability counts Ruko publishes, treated as a FLOOR rather than an equality.
+#: A floor is what the supersede workflow needs: when the decompile shows ten songs are
+#: one parameterized opcode, the replacement row is added alongside the ten retained ids
+#: and the category grows. Deletion is caught by the seeded-id retention rule instead.
+#: `movement` is included even though Ruko publishes no movement count — without it that
+#: category would have no floor at all.
 PUBLISHED_COUNTS = {
+    "movement": 6,
     "song": 10,
     "dance": 8,
     "gymnastic": 2,
     "story": 4,
     "voice": 14,
 }
+
+#: Hardware observation logs live here and nowhere else. A `confirmed` row's evidence
+#: must resolve to a real file inside this directory — see `_validate_log_path`.
+EVIDENCE_DIR = "evidence"
 
 _REQUIRED = ("id", "capability", "category", "provenance", "status")
 _OPTIONAL = (
@@ -58,7 +67,10 @@ class Entry:
 
     @property
     def has_encoding(self) -> bool:
-        return self.encoding is not None
+        # Truthiness, not `is not None`: an empty string is an absent encoding, and
+        # treating it as present let a `decoded` row satisfy its own requirement while
+        # rendering with no bytes at all.
+        return bool(self.encoding)
 
 
 @dataclass(frozen=True)
@@ -160,31 +172,38 @@ def validate_entry(entry: Entry, *, root: Path | None = None) -> list[str]:
     unearned = entry.status in ("unmapped", "unlocated")
 
     # State rules. An entry may never claim more verification than its status earns.
+    # Every check is on truthiness: `encoding: ""` satisfied an `is None` test while
+    # rendering as no bytes, which is exactly the unearned claim these rules forbid.
     if unearned:
         for name in ("encoding", "derivation", "observed_behavior", "hardware_evidence"):
-            if getattr(entry, name) is not None:
-                problems.append(f"{entry.id}: status '{entry.status}' must not carry {name}")
+            if getattr(entry, name):
+                problems.append(
+                    f"{entry.id}: [state.unearned] status '{entry.status}' must not carry {name}"
+                )
     elif entry.status == "decoded":
-        if entry.encoding is None:
-            problems.append(f"{entry.id}: status 'decoded' requires an encoding")
-        if entry.derivation is None:
-            problems.append(f"{entry.id}: status 'decoded' requires a derivation")
-        if entry.hardware_evidence is not None:
+        for name in ("encoding", "derivation"):
+            if not getattr(entry, name):
+                problems.append(
+                    f"{entry.id}: [state.decoded-missing] status 'decoded' requires {name}"
+                )
+        if entry.hardware_evidence:
             problems.append(
-                f"{entry.id}: status 'decoded' must not carry hardware_evidence "
-                "(hardware evidence means the entry is 'confirmed')"
+                f"{entry.id}: [state.decoded-evidence] status 'decoded' must not carry "
+                "hardware_evidence (hardware evidence means the entry is 'confirmed')"
             )
     elif entry.status == "confirmed":
         for name in ("encoding", "derivation", "observed_behavior", "hardware_evidence"):
-            if getattr(entry, name) is None:
-                problems.append(f"{entry.id}: status 'confirmed' requires {name}")
+            if not getattr(entry, name):
+                problems.append(
+                    f"{entry.id}: [state.confirmed-missing] status 'confirmed' requires {name}"
+                )
 
     # Provenance rule. A row seeded from marketing copy describes a capability,
     # never a protocol command, so it can never carry an encoding.
     if entry.provenance == "vendor-marketing" and entry.has_encoding:
         problems.append(
-            f"{entry.id}: provenance 'vendor-marketing' must not carry an encoding; "
-            "an encoding requires provenance 'decompile'"
+            f"{entry.id}: [provenance.marketing-encoding] provenance 'vendor-marketing' must "
+            "not carry an encoding; an encoding requires provenance 'decompile'"
         )
 
     problems.extend(_validate_evidence(entry, root))
@@ -208,21 +227,64 @@ def _validate_evidence(entry: Entry, root: Path) -> list[str]:
 
     raw_date = evidence.get("date")
     if raw_date is not None:
+        observed: _datetime.date | None = None
         if isinstance(raw_date, _datetime.date):
-            pass
+            observed = raw_date
         else:
             try:
-                _datetime.date.fromisoformat(str(raw_date))
+                observed = _datetime.date.fromisoformat(str(raw_date))
             except ValueError:
                 problems.append(
-                    f"{entry.id}: hardware_evidence.date {raw_date!r} is not an ISO 8601 date"
+                    f"{entry.id}: [evidence.date] hardware_evidence.date {raw_date!r} "
+                    "is not an ISO 8601 date"
                 )
+        # A future date cannot describe an observation that already happened.
+        if observed is not None and observed > _datetime.date.today():
+            problems.append(
+                f"{entry.id}: [evidence.date] hardware_evidence.date {raw_date} is in the "
+                "future; it must record when the robot was actually observed"
+            )
 
     log = evidence.get("log")
-    if log and not (root / str(log)).exists():
-        problems.append(f"{entry.id}: hardware_evidence.log {log!r} does not exist on disk")
+    if log:
+        problems.extend(_validate_log_path(entry.id, str(log), root))
 
     return problems
+
+
+def _validate_log_path(entry_id: str, log: str, root: Path) -> list[str]:
+    """A confirmed row's evidence must point at a real log file inside ``evidence/``.
+
+    A bare existence check is not enough, and the gap is not theoretical: ``root / log``
+    silently discards ``root`` when ``log`` is absolute, and any path that happens to
+    exist satisfies it. ``log: LICENSE``, ``log: .``, and ``log: /etc/hosts`` all earned
+    ``status: confirmed`` under the previous check — the single strongest claim this
+    repository makes, available to anyone who never touched a robot.
+    """
+    prefix = f"{entry_id}: [evidence.log]"
+    path = Path(log)
+
+    if path.is_absolute():
+        return [
+            f"{prefix} must be a repo-relative path under {EVIDENCE_DIR}/, "
+            f"got the absolute path {log!r}"
+        ]
+
+    resolved = (root / path).resolve()
+    evidence_root = (root / EVIDENCE_DIR).resolve()
+
+    if not resolved.is_relative_to(evidence_root):
+        return [f"{prefix} {log!r} resolves outside {EVIDENCE_DIR}/"]
+    if not resolved.exists():
+        return [f"{prefix} {log!r} does not exist on disk"]
+    if not resolved.is_file():
+        return [f"{prefix} {log!r} is not a file"]
+    if resolved.name == "README.md":
+        return [f"{prefix} {log!r} is the directory's own README, not an observation log"]
+    if resolved.stat().st_size == 0:
+        return [f"{prefix} {log!r} is empty; record what the robot actually did"]
+
+    return []
 
 
 def validate_table(
@@ -243,21 +305,38 @@ def validate_table(
         seen[entry.id] = seen.get(entry.id, 0) + 1
     for entry_id, count in sorted(seen.items()):
         if count > 1:
-            problems.append(f"{entry_id}: id appears {count} times; ids must be unique")
+            problems.append(
+                f"{entry_id}: [table.duplicate-id] id appears {count} times; ids must be unique"
+            )
+
+    present = {entry.id for entry in table.entries}
 
     if seeded_ids is not None:
-        present = {entry.id for entry in table.entries}
         for entry_id in seeded_ids:
             if entry_id not in present:
                 problems.append(
-                    f"{entry_id}: seeded id is absent from the table. Mark it 'unlocated' "
-                    "or keep it with superseded_by; do not delete it"
+                    f"{entry_id}: [table.seeded-missing] seeded id is absent from the table. "
+                    "Mark it 'unlocated' or keep it with superseded_by; do not delete it"
+                )
+
+    # A supersede has to be traceable, or it is just a deletion with better manners.
+    for entry in table.entries:
+        for target in entry.superseded_by or []:
+            if target not in present:
+                problems.append(
+                    f"{entry.id}: [table.superseded-dangling] superseded_by names {target!r}, "
+                    "which is not a row in the table"
                 )
 
     for category, expected in PUBLISHED_COUNTS.items():
         actual = len(table.by_category(category))
-        if actual != expected:
-            problems.append(f"category '{category}' has {actual} rows; Ruko publishes {expected}")
+        # A floor, not an equality: the decompile is expected to ADD rows (a replacement
+        # command alongside the superseded originals). Only shrinkage is a defect.
+        if actual < expected:
+            problems.append(
+                f"category '{category}': [table.count-floor] has {actual} rows, "
+                f"below the {expected} Ruko publishes"
+            )
 
     return problems
 

@@ -8,6 +8,7 @@ rule mechanical rather than aspirational.
 from __future__ import annotations
 
 import datetime as dt
+from pathlib import Path
 
 import pytest
 import yaml
@@ -72,6 +73,20 @@ def test_every_local_path_exists(documents):
             assert (repo_root() / local_path).exists(), f"{local_path} does not exist"
 
 
+def test_every_local_path_stays_inside_official_docs(documents):
+    """`repo_root() / local_path` drops the root for an absolute path, so an entry could
+    claim a vendor document is archived here while pointing at a file elsewhere."""
+    archive_root = ARCHIVE_DIR.resolve()
+    for entry in documents:
+        local_path = entry.get("local_path")
+        if not local_path:
+            continue
+        assert not Path(local_path).is_absolute(), f"{local_path} is an absolute path"
+        resolved = (repo_root() / local_path).resolve()
+        assert resolved.is_relative_to(archive_root), f"{local_path} resolves outside {ARCHIVE_DIR}"
+        assert resolved.is_file(), f"{local_path} is not a file"
+
+
 def test_every_archived_file_is_accounted_for(documents):
     """Nothing sits in official-docs/ without provenance — the rule that gives the
     directory its meaning."""
@@ -80,9 +95,11 @@ def test_every_archived_file_is_accounted_for(documents):
         for entry in documents
         if entry.get("local_path")
     }
+    # rglob, not iterdir: a nested archive directory would otherwise carry no provenance
+    # and no test would complain.
     on_disk = {
         path.resolve()
-        for path in ARCHIVE_DIR.iterdir()
+        for path in ARCHIVE_DIR.rglob("*")
         if path.is_file() and path.name != "manifest.yaml"
     }
     assert on_disk - recorded == set(), (

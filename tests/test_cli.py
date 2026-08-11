@@ -12,6 +12,8 @@ import pytest
 
 from carle.cli import _check_macos_authorization, main
 from carle.transport import (
+    _MACOS_AUTHORIZATION,
+    DEFAULT_SCAN_TIMEOUT,
     Characteristic,
     Peripheral,
     Service,
@@ -27,13 +29,17 @@ class FakeBackend:
         self._peripherals = peripherals or []
         self._services = services or []
         self._error = error
+        #: Recorded so tests can prove --timeout actually reaches the transport.
+        self.timeouts: list[float] = []
 
     async def discover(self, timeout: float):
+        self.timeouts.append(timeout)
         if self._error:
             raise self._error
         return list(self._peripherals)
 
     async def services(self, address: str, timeout: float):
+        self.timeouts.append(timeout)
         if self._error:
             raise self._error
         return list(self._services)
@@ -213,3 +219,44 @@ def test_non_macos_authorization_is_silent(capsys):
 def test_authorization_probe_returns_none_off_macos():
     assert macos_authorization(platform="linux") is None
     assert macos_authorization(platform="win32") is None
+
+
+def test_authorization_enum_matches_apple_values():
+    """CBManagerAuthorization. Swapping denied and allowed left the whole suite green,
+    which would tell an unauthorized process it may proceed — the exact SIGABRT case."""
+    assert _MACOS_AUTHORIZATION == {
+        0: "not-determined",
+        1: "restricted",
+        2: "denied",
+        3: "allowed",
+    }
+
+
+@pytest.mark.parametrize("command", [["scan"], ["connect", "AA:BB"], ["info", "AA:BB"]])
+def test_denied_authorization_blocks_every_command(capsys, command):
+    """connect and info build a BleakClient, which initializes a central manager exactly
+    as a scan does. Guarding only scan left them dying silently."""
+    exit_code = main(command, backend=FakeBackend(), authorization="denied")
+
+    assert exit_code == 1
+    assert "Privacy & Security" in capsys.readouterr().err
+
+
+# --- --timeout reaches the transport ----------------------------------------
+
+
+@pytest.mark.parametrize("command", [["scan"], ["connect", "AA:BB"], ["info", "AA:BB"]])
+def test_timeout_is_forwarded_to_the_backend(command):
+    """Hardcoding the timeout in the CLI left every test passing, while on real hardware
+    it would turn every scan and connect into an instant failure."""
+    backend = FakeBackend(services=[Service(uuid="180a")])
+    main([*command, "--timeout", "2.5"], backend=backend, authorization=None)
+
+    assert backend.timeouts == [2.5]
+
+
+def test_default_timeout_is_forwarded(command=None):
+    backend = FakeBackend()
+    main(["scan"], backend=backend, authorization=None)
+
+    assert backend.timeouts == [DEFAULT_SCAN_TIMEOUT]

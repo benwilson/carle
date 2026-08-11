@@ -78,77 +78,77 @@ generated; see [`protocol/commands.yaml`](../protocol/commands.yaml) for the sou
 
 ### Movement
 
-| ID | Capability | Status | Encoding | Evidence |
-|---|---|---|---|---|
-| `move_forward` | Walk forward | unmapped | — | — |
-| `move_backward` | Walk backward | unmapped | — | — |
-| `turn_left` | Turn left | unmapped | — | — |
-| `turn_right` | Turn right | unmapped | — | — |
-| `slide_left` | Slide left | unmapped | — | — |
-| `slide_right` | Slide right | unmapped | — | — |
+| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+|---|---|---|---|---|---|
+| `move_forward` | Walk forward | unmapped | — | — | — |
+| `move_backward` | Walk backward | unmapped | — | — | — |
+| `turn_left` | Turn left | unmapped | — | — | — |
+| `turn_right` | Turn right | unmapped | — | — | — |
+| `slide_left` | Slide left | unmapped | — | — | — |
+| `slide_right` | Slide right | unmapped | — | — | — |
 
 ### Songs
 
-| ID | Capability | Status | Encoding | Evidence |
-|---|---|---|---|---|
-| `song_01` | Song 1 of 10 (title not yet identified) | unmapped | — | — |
-| `song_02` | Song 2 of 10 (title not yet identified) | unmapped | — | — |
-| `song_03` | Song 3 of 10 (title not yet identified) | unmapped | — | — |
-| `song_04` | Song 4 of 10 (title not yet identified) | unmapped | — | — |
-| `song_05` | Song 5 of 10 (title not yet identified) | unmapped | — | — |
-| `song_06` | Song 6 of 10 (title not yet identified) | unmapped | — | — |
-| `song_07` | Song 7 of 10 (title not yet identified) | unmapped | — | — |
-| `song_08` | Song 8 of 10 (title not yet identified) | unmapped | — | — |
-| `song_09` | Song 9 of 10 (title not yet identified) | unmapped | — | — |
-| `song_10` | Song 10 of 10 (title not yet identified) | unmapped | — | — |
+| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+|---|---|---|---|---|---|
+| `song_01` | Song 1 of 10 (title not yet identified) | unmapped | — | — | — |
+| `song_02` | Song 2 of 10 (title not yet identified) | unmapped | — | — | — |
+| `song_03` | Song 3 of 10 (title not yet identified) | unmapped | — | — | — |
+| `song_04` | Song 4 of 10 (title not yet identified) | unmapped | — | — | — |
+| `song_05` | Song 5 of 10 (title not yet identified) | unmapped | — | — | — |
+| `song_06` | Song 6 of 10 (title not yet identified) | unmapped | — | — | — |
+| `song_07` | Song 7 of 10 (title not yet identified) | unmapped | — | — | — |
+| `song_08` | Song 8 of 10 (title not yet identified) | unmapped | — | — | — |
+| `song_09` | Song 9 of 10 (title not yet identified) | unmapped | — | — | — |
+| `song_10` | Song 10 of 10 (title not yet identified) | unmapped | — | — | — |
 
 ### Dance tracks
 
-| ID | Capability | Status | Encoding | Evidence |
-|---|---|---|---|---|
-| `dance_01` | Dance track 1 of 8 (title not yet identified) | unmapped | — | — |
-| `dance_02` | Dance track 2 of 8 (title not yet identified) | unmapped | — | — |
-| `dance_03` | Dance track 3 of 8 (title not yet identified) | unmapped | — | — |
-| `dance_04` | Dance track 4 of 8 (title not yet identified) | unmapped | — | — |
-| `dance_05` | Dance track 5 of 8 (title not yet identified) | unmapped | — | — |
-| `dance_06` | Dance track 6 of 8 (title not yet identified) | unmapped | — | — |
-| `dance_07` | Dance track 7 of 8 (title not yet identified) | unmapped | — | — |
-| `dance_08` | Dance track 8 of 8 (title not yet identified) | unmapped | — | — |
+| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+|---|---|---|---|---|---|
+| `dance_01` | Dance track 1 of 8 (title not yet identified) | unmapped | — | — | — |
+| `dance_02` | Dance track 2 of 8 (title not yet identified) | unmapped | — | — | — |
+| `dance_03` | Dance track 3 of 8 (title not yet identified) | unmapped | — | — | — |
+| `dance_04` | Dance track 4 of 8 (title not yet identified) | unmapped | — | — | — |
+| `dance_05` | Dance track 5 of 8 (title not yet identified) | unmapped | — | — | — |
+| `dance_06` | Dance track 6 of 8 (title not yet identified) | unmapped | — | — | — |
+| `dance_07` | Dance track 7 of 8 (title not yet identified) | unmapped | — | — | — |
+| `dance_08` | Dance track 8 of 8 (title not yet identified) | unmapped | — | — | — |
 
 ### Gymnastic routines
 
-| ID | Capability | Status | Encoding | Evidence |
-|---|---|---|---|---|
-| `gymnastic_01` | Gymnastic routine 1 of 2 (name not yet identified) | unmapped | — | — |
-| `gymnastic_02` | Gymnastic routine 2 of 2 (name not yet identified) | unmapped | — | — |
+| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+|---|---|---|---|---|---|
+| `gymnastic_01` | Gymnastic routine 1 of 2 (name not yet identified) | unmapped | — | — | — |
+| `gymnastic_02` | Gymnastic routine 2 of 2 (name not yet identified) | unmapped | — | — | — |
 
 ### Stories
 
-| ID | Capability | Status | Encoding | Evidence |
-|---|---|---|---|---|
-| `story_01` | Story 1 of 4 (title not yet identified) | unmapped | — | — |
-| `story_02` | Story 2 of 4 (title not yet identified) | unmapped | — | — |
-| `story_03` | Story 3 of 4 (title not yet identified) | unmapped | — | — |
-| `story_04` | Story 4 of 4 (title not yet identified) | unmapped | — | — |
+| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+|---|---|---|---|---|---|
+| `story_01` | Story 1 of 4 (title not yet identified) | unmapped | — | — | — |
+| `story_02` | Story 2 of 4 (title not yet identified) | unmapped | — | — | — |
+| `story_03` | Story 3 of 4 (title not yet identified) | unmapped | — | — | — |
+| `story_04` | Story 4 of 4 (title not yet identified) | unmapped | — | — | — |
 
 ### Voice commands
 
-| ID | Capability | Status | Encoding | Evidence |
-|---|---|---|---|---|
-| `voice_01` | Voice command 1 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_02` | Voice command 2 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_03` | Voice command 3 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_04` | Voice command 4 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_05` | Voice command 5 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_06` | Voice command 6 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_07` | Voice command 7 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_08` | Voice command 8 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_09` | Voice command 9 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_10` | Voice command 10 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_11` | Voice command 11 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_12` | Voice command 12 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_13` | Voice command 13 of 14 (phrase not yet identified) | unmapped | — | — |
-| `voice_14` | Voice command 14 of 14 (phrase not yet identified) | unmapped | — | — |
+| ID | Capability | Status | Encoding | Observed behavior | Evidence |
+|---|---|---|---|---|---|
+| `voice_01` | Voice command 1 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_02` | Voice command 2 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_03` | Voice command 3 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_04` | Voice command 4 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_05` | Voice command 5 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_06` | Voice command 6 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_07` | Voice command 7 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_08` | Voice command 8 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_09` | Voice command 9 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_10` | Voice command 10 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_11` | Voice command 11 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_12` | Voice command 12 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_13` | Voice command 13 of 14 (phrase not yet identified) | unmapped | — | — | — |
+| `voice_14` | Voice command 14 of 14 (phrase not yet identified) | unmapped | — | — | — |
 
 <!-- END GENERATED COMMAND TABLE -->
 

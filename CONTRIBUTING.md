@@ -66,6 +66,10 @@ Never hand-edit the generated region — edit the YAML and regenerate.
 ## Archived vendor documents
 
 `official-docs/` holds vendor-published material. Every file there must have an entry in
-`official-docs/manifest.yaml` recording its source URL and the date it was retrieved. If you add
-a document and cannot cite where it came from, say so with `provenance: unverified` rather than
-guessing at a URL.
+`official-docs/manifest.yaml` recording its `source_url` and the `retrieved` date, and every
+archived file must declare `capture: verbatim` or `capture: extracted` so a transcription is
+never mistaken for a byte-for-byte copy.
+
+If a source cannot be reached, record the entry anyway with `source_url`, the attempt date, and
+a `retrieval_failed` note explaining what happened — omit `local_path` in that case. Never guess
+at a URL to fill the field.
