@@ -15,8 +15,9 @@ generated markers — edit the YAML and regenerate.
 
 The robot advertises over Bluetooth Low Energy under a name beginning `JT_`, and separately
 presents a Bluetooth audio sink named `JT_Speaker` (see [Audio channel](#audio-channel)) — the
-two names are how the app tells the control radio from the speaker. Control uses a single vendor
-service with a write characteristic and a notify characteristic:
+two names are how the app tells the control radio from the speaker. The app finds the robot by
+scanning for any device whose name starts with `JT`. Control uses a single vendor service with a
+write characteristic and a notify characteristic:
 
 | Role | UUID |
 |---|---|
@@ -31,7 +32,9 @@ sibling app from the same publisher could ship a different robot by changing thr
 values and nothing else.
 
 Writes are split into chunks of at most twenty payload bytes, and the app waits for each
-write's callback before sending the next.
+write's callback before sending the next. Control frames go out as writes *without* response —
+the fire-and-forget kind — while the firmware-update path uses acknowledged writes. The app
+never negotiates a larger MTU, so the twenty-byte chunk size is fixed rather than tuned.
 
 **The notify characteristic carries no meaning the app defines.** On connecting, the app
 subscribes to `AE02` and installs a handler for value changes — but that handler passes the
@@ -92,8 +95,16 @@ Movement frames (`0xB6`) carry six payload bytes:
 | 5 | no observable effect; see below |
 
 Direction runs counter-clockwise from 1 at RIGHT, so 3 is UP, 5 is LEFT and 7 is DOWN, with 0
-meaning no movement. Setting a direction and a speed makes the robot move; it takes its steps
-and stops on its own.
+meaning no movement. That is the app's own mapping, not an inference from one observation: the
+joystick sorts the stick angle into eight octants and writes one of eight values — RIGHT 1,
+UP-RIGHT 2, UP 3, UP-LEFT 4, LEFT 5, DOWN-LEFT 6, DOWN 7, DOWN-RIGHT 8. Direction is therefore
+octant-discrete; the app never sends an in-between heading. Setting a direction and a speed
+makes the robot move; it takes its steps and stops on its own.
+
+Speed, byte 1, is a 0-100 value in the app — it comes from how far the joystick sits from
+centre, as a percentage of the maximum throw, and the app caps it there. The byte itself holds
+0-255, and a hand-sent 120 moved the robot in testing, so the ceiling of 100 belongs to the
+app, not the protocol.
 
 Byte 0 selects the movement mode. At 1 the robot walks, taking steps. At 2 it slides, rolling
 forward without stepping. The direction byte applies to either.
@@ -210,9 +221,18 @@ and its purpose is unrecorded; it has the shape of a post-connection handshake o
 is a guess. A client that reproduces the app's exact startup may need it; a client that drives
 the robot without it may not.
 
-**Not yet documented.** What each `0xB2` action code actually does on hardware, and how to stop
-the robot — nothing decoded here halts anything, though the remote carries an unexamined centre
-key that may do it.
+A note on how commands end, because there is no stop opcode anywhere in the app. Each pose
+command is a momentary pulse: the movement screen writes the limb or waist value, then writes
+that same byte back to `0` about 200 ms later, so the send that "does" the motion is the
+non-zero one and the zero only clears the register — the joint itself holds its new position.
+The joystick screen streams the movement frame on a 100 ms timer for as long as it is held, and
+on release streams frames with the direction and speed bytes zeroed. So movement is halted by
+sending a zero-motion frame, not by a dedicated command. Nothing the app sends interrupts the
+idle routine or stops media playback once started; those have no off switch on this channel.
+
+**Not yet documented.** What each `0xB2` action code actually does on hardware, and any way to
+halt the idle routine or media playback — the app has none, though the 2.4 GHz remote carries an
+unexamined centre key that may.
 
 ## Audio channel
 
