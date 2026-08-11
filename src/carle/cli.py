@@ -101,6 +101,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--behavior", required=True, help="what the robot actually did, in your words"
     )
     confirm.add_argument("--evidence-dir", type=Path, default=None)
+    confirm.add_argument(
+        "--log", help="which send log to confirm from, when more than one could apply"
+    )
     confirm.add_argument("--table", type=Path, default=None, help=argparse.SUPPRESS)
 
     return parser
@@ -219,6 +222,11 @@ def _run_send(args: argparse.Namespace, backend: Backend) -> int:
             if args.family is None:
                 print("error: --raw also needs --family, e.g. --family 0xB3", file=sys.stderr)
                 return 1
+            if overrides:
+                # A raw payload has no declared parameters, so recording overrides in
+                # its log would describe bytes that carry no such thing.
+                print("error: --param has no meaning with --raw", file=sys.stderr)
+                return 1
             payload = frame.from_hex(args.raw)
             built = frame.build(frame.byte_literal(args.family), payload)
         else:
@@ -301,15 +309,53 @@ def _run_confirm(args: argparse.Namespace) -> int:
         )
         return 1
 
+    if not args.behavior.strip():
+        print("error: --behavior cannot be blank; say what the robot did", file=sys.stderr)
+        return 1
+
     directory = _evidence_dir(args, raw=False)
-    log = evidence.latest_promotable(entry.id, directory)
-    if log is None:
+    candidates = evidence.promotable_logs(entry.id, directory)
+    if not candidates:
         print(
             f"error: no send log for {entry.id} in {directory}. Run `carle send {entry.id} "
             "--address ...` against a real robot first — a dry run does not count.",
             file=sys.stderr,
         )
         return 1
+
+    if args.log:
+        candidates = [(p, log) for p, log in candidates if p.name == args.log]
+        if not candidates:
+            print(f"error: no promotable log named {args.log!r} for {entry.id}", file=sys.stderr)
+            return 1
+    elif len(candidates) > 1:
+        # Silently taking the newest binds the operator's description to whichever send
+        # happened last, which may not be the one they watched.
+        print(
+            f"error: {len(candidates)} promotable logs for {entry.id}. Say which one you "
+            "watched with --log:",
+            file=sys.stderr,
+        )
+        for path, log in candidates:
+            params = log.parameters or "defaults"
+            print(f"  {path.name}  ({params})", file=sys.stderr)
+        return 1
+
+    log_path, log = candidates[0]
+
+    # Cite the file that was actually checked, not a reconstructed path — the two
+    # diverged whenever --evidence-dir pointed elsewhere, publishing a citation to a
+    # file the CLI had never opened. The directory must also be named `evidence`, since
+    # that is the only place the invariant suite will resolve a citation from.
+    resolved_dir = directory.resolve()
+    if resolved_dir.name != EVIDENCE_DIR or log_path.resolve().parent != resolved_dir:
+        print(
+            f"error: {log_path} is not inside a directory named {EVIDENCE_DIR}/, so it "
+            "cannot be cited as evidence.",
+            file=sys.stderr,
+        )
+        return 1
+    citation = f"{EVIDENCE_DIR}/{log_path.name}"
 
     try:
         expected = entry.build_frame(log.parameters)
@@ -336,11 +382,11 @@ def _run_confirm(args: argparse.Namespace) -> int:
                 # date.fromisoformat, which accepts nothing else on Python 3.10.
                 "date": log.date.isoformat(),
                 "platform": log.platform,
-                "log": f"{EVIDENCE_DIR}/{log.filename()}",
+                "log": citation,
             }
     save_table(rows, args.table)
 
-    print(f"{entry.id} is now confirmed, citing {log.filename()}")
+    print(f"{entry.id} is now confirmed, citing {citation}")
     print("regenerate the reference: uv run python scripts/generate_reference.py")
     return 0
 

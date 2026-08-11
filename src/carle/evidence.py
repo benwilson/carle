@@ -154,15 +154,21 @@ def read_log(path: Path | str) -> SendLog:
             raise EvidenceError(f"{path} parameter {pair!r} is not 'name=value'")
         parameters[name] = int(value)
 
-    notifications = [
-        frame.from_hex(chunk)
-        for chunk in fields.get("notifications", "").split("|")
-        if chunk.strip()
-    ]
+    # from_hex raises FrameError, which callers do not catch — one bad byte would take
+    # down the whole invariant run instead of reporting a rule violation.
+    try:
+        parsed_frame = frame.from_hex(fields["frame"])
+        notifications = [
+            frame.from_hex(chunk)
+            for chunk in fields.get("notifications", "").split("|")
+            if chunk.strip()
+        ]
+    except frame.FrameError as exc:
+        raise EvidenceError(f"{path} contains an unreadable byte sequence: {exc}") from exc
 
     return SendLog(
         kind=kind,
-        frame=frame.from_hex(fields["frame"]),
+        frame=parsed_frame,
         timestamp=timestamp,
         platform=fields["platform"],
         peripheral=fields.get("peripheral", ""),
@@ -182,16 +188,23 @@ def logs_for(entry_id: str, directory: Path | str) -> list[Path]:
     return sorted(directory.glob(f"{entry_id}-*{LOG_SUFFIX}"))
 
 
-def latest_promotable(entry_id: str, directory: Path | str) -> SendLog | None:
-    """The most recent log that may support a promotion, or None."""
+def promotable_logs(entry_id: str, directory: Path | str) -> list[tuple[Path, SendLog]]:
+    """Every log that could support a promotion, newest first."""
+    found: list[tuple[Path, SendLog]] = []
     for path in reversed(logs_for(entry_id, directory)):
         try:
             log = read_log(path)
         except EvidenceError:
             continue
         if log.promotable and log.entry_id == entry_id:
-            return log
-    return None
+            found.append((path, log))
+    return found
+
+
+def latest_promotable(entry_id: str, directory: Path | str) -> SendLog | None:
+    """The most recent log that may support a promotion, or None."""
+    found = promotable_logs(entry_id, directory)
+    return found[0][1] if found else None
 
 
 def find_log_path(log: SendLog, directory: Path | str) -> Path:

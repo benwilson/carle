@@ -90,10 +90,16 @@ def render(table: Table) -> str:
             encoding = "—"
             if entry.has_frame:
                 try:
-                    encoding = f"`{cell(to_hex(entry.build_frame()))}`"
+                    # A confirmed row shows the frame its evidence actually recorded.
+                    # Rendering the default-parameter frame published bytes that were
+                    # never sent — a confirmed movement command shown as all zeroes.
+                    encoding = f"`{cell(to_hex(entry.build_frame(entry.observed_parameters)))}`"
                 except Exception:  # noqa: BLE001 - a broken row is reported by the gate
                     encoding = "_unbuildable_"
             observed = cell(entry.observed_behavior) if entry.observed_behavior else "—"
+            if entry.observed_parameters:
+                sent = ", ".join(f"{k}={v}" for k, v in sorted(entry.observed_parameters.items()))
+                observed += f" (sent at {cell(sent)})"
 
             evidence = "—"
             if entry.hardware_evidence:

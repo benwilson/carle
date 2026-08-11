@@ -117,6 +117,10 @@ def resolve(
         low, high = int(spec["min"]), int(spec["max"])
         if not low <= value <= high:
             raise FrameError(f"{name} is {value}, outside its documented range {low}-{high}")
+        if not 0 <= value <= 0xFF:
+            # A declared range wider than a byte would otherwise surface as an uncaught
+            # ValueError from bytes(), crashing the gate rather than reporting a rule.
+            raise FrameError(f"{name} resolves to {value}, which is not a byte")
         out.append(value)
     return bytes(out)
 

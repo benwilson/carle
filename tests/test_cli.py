@@ -613,3 +613,63 @@ def test_unrelated_entries_are_untouched_by_a_promotion(workspace):
     for entry_id in before:
         if entry_id != "media_music":
             assert before[entry_id] == after[entry_id]
+
+
+def test_two_promotable_logs_refuse_to_guess(workspace, capsys):
+    """Taking the newest silently binds the operator's description to whichever send
+    happened last, which may not be the one they watched."""
+    send_then(workspace, "--param", "index=1")
+    send_then(workspace, "--param", "index=2")
+    assert confirm(workspace) == 1
+    err = capsys.readouterr().err
+    assert "--log" in err and "2 promotable logs" in err
+
+
+def test_naming_the_log_resolves_the_ambiguity(workspace):
+    from carle.table import load_table as load
+
+    table, evidence_dir = workspace
+    send_then(workspace, "--param", "index=1")
+    send_then(workspace, "--param", "index=2")
+    first = sorted(evidence_dir.glob("media_music-*.log"))[0]
+    assert confirm(workspace, "--log", first.name) == 0
+    entry = next(e for e in load(table).entries if e.id == "media_music")
+    assert entry.observed_parameters == {"index": 1}
+
+
+def test_the_citation_names_the_log_that_was_checked(workspace):
+    from carle.table import load_table as load
+
+    table, evidence_dir = workspace
+    send_then(workspace)
+    confirm(workspace)
+    entry = next(e for e in load(table).entries if e.id == "media_music")
+    cited = entry.hardware_evidence["log"]
+    assert (evidence_dir.parent / cited).exists()
+
+
+def test_a_blank_behavior_is_refused(workspace, capsys):
+    send_then(workspace)
+    assert confirm(workspace, behavior="   ") == 1
+    assert "cannot be blank" in capsys.readouterr().err
+
+
+def test_raw_refuses_parameters(tmp_path, capsys):
+    code = main(
+        [
+            "send",
+            "--raw",
+            "03 00",
+            "--family",
+            "0xB3",
+            "--param",
+            "index=5",
+            "--dry-run",
+            "--evidence-dir",
+            str(tmp_path),
+        ],
+        backend=FakeBackend(),
+        authorization=None,
+    )
+    assert code == 1
+    assert "--param has no meaning with --raw" in capsys.readouterr().err

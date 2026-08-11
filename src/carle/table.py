@@ -254,18 +254,25 @@ def validate_entry(entry: Entry, *, root: Path | None = None) -> list[str]:
                 problems.append(
                     f"{entry.id}: [state.decoded-missing] status 'decoded' requires {name}"
                 )
-        if entry.hardware_evidence:
-            problems.append(
-                f"{entry.id}: [state.decoded-evidence] status 'decoded' must not carry "
-                "hardware_evidence (hardware evidence means the entry is 'confirmed')"
-            )
+        # An observation of ANY kind means the entry is confirmed. Forbidding only
+        # hardware_evidence left `decoded` free to publish a behavior report with no
+        # log, no date and no platform behind it.
+        for name in ("hardware_evidence", "observed_behavior", "observed_parameters"):
+            if getattr(entry, name):
+                problems.append(
+                    f"{entry.id}: [state.decoded-observation] status 'decoded' must not carry "
+                    f"{name}; an observation means the entry is 'confirmed'"
+                )
     elif entry.status == "confirmed":
         if entry.family is None:
             problems.append(
                 f"{entry.id}: [state.confirmed-missing] status 'confirmed' requires family"
             )
         for name in ("payload", "derivation", "observed_behavior", "hardware_evidence"):
-            if not getattr(entry, name):
+            value = getattr(entry, name)
+            if isinstance(value, str):
+                value = value.strip()
+            if not value:
                 problems.append(
                     f"{entry.id}: [state.confirmed-missing] status 'confirmed' requires {name}"
                 )
@@ -355,7 +362,12 @@ def _validate_evidence(entry: Entry, root: Path) -> list[str]:
                     "is not an ISO 8601 date"
                 )
         # A future date cannot describe an observation that already happened.
-        if observed is not None and observed > _datetime.date.today():
+        # Compare against the same clock the CLI stamps with. `date.today()` is local,
+        # so an evening promotion west of UTC wrote a 'future' date and failed CI.
+        if (
+            observed is not None
+            and observed > _datetime.datetime.now(_datetime.timezone.utc).date()
+        ):
             problems.append(
                 f"{entry.id}: [evidence.date] hardware_evidence.date {raw_date} is in the "
                 "future; it must record when the robot was actually observed"
@@ -382,6 +394,7 @@ def _validate_log_contents(entry: Entry, path: Path) -> list[str]:
     from carle import evidence as evidence_log  # local import: evidence imports frame, not table
 
     prefix = f"{entry.id}: [evidence.log-shape]"
+    evidence = entry.hardware_evidence or {}
     try:
         log = evidence_log.read_log(path)
     except evidence_log.EvidenceError as exc:
@@ -407,6 +420,18 @@ def _validate_log_contents(entry: Entry, path: Path) -> list[str]:
         problems.append(
             f"{prefix} log records {frame.to_hex(log.frame)} but the entry rebuilds to "
             f"{frame.to_hex(expected)}; the observation described a different frame"
+        )
+    recorded_date = (evidence.get("date") if isinstance(evidence, dict) else None) or ""
+    if str(recorded_date) != log.date.isoformat():
+        problems.append(
+            f"{prefix} entry dates the observation {recorded_date}, but the log was "
+            f"written {log.date.isoformat()}"
+        )
+    recorded_platform = (evidence.get("platform") if isinstance(evidence, dict) else None) or ""
+    if str(recorded_platform) != log.platform:
+        problems.append(
+            f"{prefix} entry names platform {recorded_platform!r}, but the log records "
+            f"{log.platform!r}"
         )
     if log.parameters != (entry.observed_parameters or {}):
         problems.append(

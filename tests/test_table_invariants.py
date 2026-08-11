@@ -175,7 +175,7 @@ def test_confirmed_missing_any_required_field_fails(tmp_path, field):
     row = {**CONFIRMED_ROW, field: None}
     row["hardware_evidence"] = {
         "date": "2026-08-11",
-        "platform": "macOS",
+        "platform": "darwin",
         "log": evidence_log(tmp_path),
     }
     assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
@@ -187,7 +187,7 @@ def test_confirmed_with_an_empty_string_field_fails(tmp_path, field):
     row = {**CONFIRMED_ROW, field: [] if field == "payload" else ""}
     row["hardware_evidence"] = {
         "date": "2026-08-11",
-        "platform": "macOS",
+        "platform": "darwin",
         "log": evidence_log(tmp_path),
     }
     assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
@@ -207,7 +207,7 @@ def test_decoded_carrying_hardware_evidence_fails(tmp_path):
             "log": evidence_log(tmp_path),
         },
     }
-    assert "state.decoded-evidence" in codes(problems_for(tmp_path, [row]))
+    assert "state.decoded-observation" in codes(problems_for(tmp_path, [row]))
 
 
 @pytest.mark.parametrize("field", ["payload", "derivation"])
@@ -232,7 +232,7 @@ def test_decoded_missing_a_required_field_fails(tmp_path, field):
 def _confirmed_with_log(tmp_path: Path, log: str) -> list[str]:
     row = {
         **CONFIRMED_ROW,
-        "hardware_evidence": {"date": "2026-08-11", "platform": "macOS", "log": log},
+        "hardware_evidence": {"date": "2026-08-11", "platform": "darwin", "log": log},
     }
     return problems_for(tmp_path, [row])
 
@@ -558,3 +558,62 @@ def test_an_unearned_row_carrying_family_zero_is_rejected(tmp_path):
     """0x00 is falsy and legal, so a truthiness check would let it through."""
     row = {**VALID_ROW, "family": "0x00"}
     assert "state.unearned" in codes(problems_for(tmp_path, [row]))
+
+
+def test_a_decoded_row_carrying_an_observation_is_rejected(tmp_path):
+    """`decoded` means never run on hardware. An observation of any kind contradicts it,
+    and forbidding only hardware_evidence left behavior reports publishable without a log."""
+    row = {
+        **VALID_ROW,
+        **FRAME_FIELDS,
+        "provenance": "decompile",
+        "status": "decoded",
+        "derivation": "somewhere",
+        "observed_behavior": "It danced, I promise",
+    }
+    assert "state.decoded-observation" in codes(problems_for(tmp_path, [row]))
+
+
+def test_a_whitespace_only_behavior_is_rejected(tmp_path):
+    """It renders as an empty cell beside a confirmed status and an evidence link."""
+    row = {
+        **CONFIRMED_ROW,
+        "observed_behavior": "   ",
+        "hardware_evidence": {
+            "date": "2026-08-11",
+            "platform": "darwin",
+            "log": evidence_log(tmp_path),
+        },
+    }
+    assert "state.confirmed-missing" in codes(problems_for(tmp_path, [row]))
+
+
+def test_a_date_disagreeing_with_the_log_is_rejected(tmp_path):
+    row = {
+        **CONFIRMED_ROW,
+        "hardware_evidence": {
+            "date": "2020-01-01",
+            "platform": "darwin",
+            "log": evidence_log(tmp_path),
+        },
+    }
+    assert "evidence.log-shape" in codes(problems_for(tmp_path, [row]))
+
+
+def test_a_platform_disagreeing_with_the_log_is_rejected(tmp_path):
+    row = {
+        **CONFIRMED_ROW,
+        "hardware_evidence": {
+            "date": "2026-08-11",
+            "platform": "win32",
+            "log": evidence_log(tmp_path),
+        },
+    }
+    assert "evidence.log-shape" in codes(problems_for(tmp_path, [row]))
+
+
+def test_a_log_with_unreadable_hex_reports_a_rule_rather_than_crashing(tmp_path):
+    """One bad byte used to raise FrameError straight through the gate, abandoning
+    every remaining entry's rules instead of reporting a violation."""
+    log = evidence_log(tmp_path, frame_hex="ZZ 02 QQ")
+    assert "evidence.log-shape" in codes(_confirmed_with_log(tmp_path, log))

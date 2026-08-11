@@ -25,12 +25,22 @@ payload. A payload item is a byte literal or a `{name}` reference resolved from 
 
 **The CLI issued this exact frame, and a contributor reported the resulting behavior.**
 
-That is the whole claim, and it is worth stating plainly. The write is
-write-without-response, so a successful send means the host's Bluetooth stack accepted
-the bytes — not that the robot received them. `observed_behavior` is a human report with
-nothing mechanical behind it. What the tooling does guarantee is that the frame in the
-log is the frame the entry builds, that the log was written by a real send rather than a
-dry run, and that the log is committed where anyone can read it.
+That is the whole claim, and it is worth stating plainly — including the parts the
+tooling cannot back.
+
+The write goes out without requesting a response, so a successful send means the host's
+Bluetooth stack accepted the bytes, not that the robot received them.
+`observed_behavior` is a human report with nothing mechanical behind it.
+
+What the test suite actually checks is **internal consistency**: that the committed log
+names this entry, records a send rather than a raw write, carries the frame the entry
+rebuilds at the parameters the log records, and agrees with the entry on date and
+platform. It cannot tell whether that log came from a real robot. A determined
+contributor can hand-write one — it is a text file in the repository.
+
+So the honest description is that these rules make a false claim *deliberate* rather
+than accidental, and leave it visible in a diff for a reviewer to catch. They do not
+make it impossible. Authenticity rests on you, and on review.
 
 `hardware_evidence` names a `date`, a `platform`, and a `log` path under `evidence/`. The
 invariant suite **opens that log** and requires it to name this entry, to be a real send
