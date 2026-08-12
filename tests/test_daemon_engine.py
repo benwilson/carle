@@ -121,7 +121,9 @@ def test_stop_returns_a_raised_joint_to_neutral():
         await engine.tick()  # holds limb=1
         assert limbs(conn.sent)[-1] == 1
         engine.stop()
-        clock.advance(0.1)
+        # The neutral return is itself a joint change, so it honors the servo floor: the
+        # reversal to limb=2 lands only once ~0.5s has passed since limb=1 was set.
+        clock.advance(0.6)
         await engine.tick()  # emits the return (limb=2)
         assert limbs(conn.sent)[-1] == 2
         clock.advance(0.6)
@@ -175,6 +177,29 @@ def test_a_joint_never_changes_faster_than_the_safe_hold():
             clock.advance(0.1)
         deltas = [b - a for a, b in zip(change_times, change_times[1:], strict=False)]
         assert all(d >= 0.5 - 1e-9 for d in deltas), f"limb changed too fast: {deltas}"
+
+    asyncio.run(scenario())
+
+
+def test_short_holds_cannot_beat_the_servo_floor():
+    # The rate limit is a real time floor, not a promise resting on macro holds: even
+    # when steps declare 0.1s holds, the emitted limb byte never flips faster than 0.5s.
+    async def scenario():
+        engine, conn, clock = make_engine()
+        engine.enqueue(
+            [pose(5, hold=0.1), pose(6, hold=0.1), pose(5, hold=0.1), pose(6, hold=0.1)]
+        )
+        change_times: list[float] = []
+        last_limb = None
+        for _ in range(40):
+            await engine.tick()
+            cur = limbs(conn.sent)[-1] if conn.sent else 0
+            if cur != last_limb:
+                change_times.append(clock.now())
+                last_limb = cur
+            clock.advance(0.1)
+        deltas = [b - a for a, b in zip(change_times, change_times[1:], strict=False)]
+        assert all(d >= 0.5 - 1e-9 for d in deltas), f"floor breached: {deltas}"
 
     asyncio.run(scenario())
 

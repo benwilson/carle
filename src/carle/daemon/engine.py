@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from carle import frame
 from carle.daemon.connection import DaemonConnectionError
 from carle.daemon.steps import (
+    SAFE_HOLD,
     MediaStep,
     MovementStep,
     PauseStep,
@@ -103,6 +104,10 @@ class Engine:
         self._spawn_say: list[object] = []
         self._last_sent: bytes | None = None
         self._last_write: float | None = None
+        #: When each joint byte last changed in the emitted stream — the KTD4 rate-limit's
+        #: memory, so a joint can never flip faster than the servo-safe minimum regardless
+        #: of which track wrote it or how short a step's declared hold is.
+        self._joint_changed_at: dict[int, float] = {}
 
     # --- control operations -------------------------------------------------------
 
@@ -160,7 +165,7 @@ class Engine:
         self._prune_spawns(now)
         media_frames = self._advance(now)
         composed = self._compose()
-        guarded = self._guard(composed)
+        guarded = self._guard(composed, now)
         await self._emit(now, guarded, media_frames)
 
     def _prune_spawns(self, now: float) -> None:
@@ -224,19 +229,25 @@ class Engine:
                     target[i] = byte
         return target
 
-    def _guard(self, composed: list[int]) -> list[int]:
-        """Emit at most one non-zero joint byte (waist or limb) per frame (KTD4).
+    def _guard(self, composed: list[int], now: float) -> list[int]:
+        """Rate-limit joint changes and forbid compound multi-joint frames (KTD4).
 
-        Two guarantees in one: a frame never carries a compound multi-joint pose (whether
-        the robot even acts on one is an open protocol question), and — because each
-        joint's value is held for its step, and only one joint is ever driven at a time —
-        no joint flips faster than the servo-safe minimum. When both joints are non-zero
-        in the composed target, the one already active in the last frame is kept for
-        continuity and the other waits.
+        Two guarantees. First, a joint byte never changes more often than the servo-safe
+        minimum, regardless of which track wrote it or how short a step's declared hold
+        is — a real time floor, not a promise that rests on macro holds. A change that
+        arrives too soon is suppressed (the previous value is held) until the floor
+        elapses. Second, a frame never carries two non-zero joints at once (whether the
+        robot even acts on a compound pose is an open protocol question); the joint
+        already active in the last frame is kept for continuity and the other waits.
         """
+        last = _payload(self._last_sent) if self._last_sent is not None else [0] * 6
         guarded = list(composed)
+        for i in (_WAIST_INDEX, _LIMB_INDEX):
+            if guarded[i] != last[i]:
+                since = now - self._joint_changed_at.get(i, float("-inf"))
+                if since < SAFE_HOLD:
+                    guarded[i] = last[i]  # too soon: hold the previous value
         if guarded[_WAIST_INDEX] and guarded[_LIMB_INDEX]:
-            last = _payload(self._last_sent) if self._last_sent is not None else [0] * 6
             if last[_LIMB_INDEX]:  # a held limb stays; the new waist lean waits
                 guarded[_WAIST_INDEX] = 0
             else:  # otherwise keep the waist and defer the limb
@@ -247,9 +258,14 @@ class Engine:
         for media in media_frames:
             if not await self._send(media, is_target=False):
                 return
+            self._last_write = now  # any real frame resets the heartbeat timer (R6)
         target_frame = frame.build(0xB6, guarded)
         if target_frame != self._last_sent:
+            last = _payload(self._last_sent) if self._last_sent is not None else [0] * 6
             if await self._send(target_frame, is_target=True):
+                for i in (_WAIST_INDEX, _LIMB_INDEX):
+                    if guarded[i] != last[i]:
+                        self._joint_changed_at[i] = now
                 self._last_sent = target_frame
                 self._last_write = now
             return

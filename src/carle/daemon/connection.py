@@ -22,6 +22,7 @@ and the tests never need a real Bluetooth stack — the same seam `carle.cli` us
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections.abc import Callable
 from typing import Protocol, runtime_checkable
@@ -36,6 +37,9 @@ BATTERY_CHARACTERISTIC = "00002a19-0000-1000-8000-00805f9b34fb"
 #: Seconds between reconnect attempts after a drop. The robot drops its link on its own
 #: periodically, so a reconnect loop is the normal path, not an error path.
 RECONNECT_BACKOFF = 1.5
+
+#: Bound on a battery GATT read, so a hung read cannot stall a status request.
+BATTERY_READ_TIMEOUT = 2.0
 
 
 class DaemonConnectionError(Exception):
@@ -117,6 +121,7 @@ class DaemonConnection:
         self._client: BleClient | None = None
         self._lock = asyncio.Lock()
         self._reconnect_task: asyncio.Task | None = None
+        self._closed = False
         self.last_write: float | None = None
 
     @property
@@ -154,31 +159,42 @@ class DaemonConnection:
             if not self.is_connected:
                 return None
             try:
-                value = await self._client.read(BATTERY_CHARACTERISTIC)
+                # Bound the GATT round-trip so a hung read cannot stall a status request.
+                value = await asyncio.wait_for(
+                    self._client.read(BATTERY_CHARACTERISTIC), timeout=BATTERY_READ_TIMEOUT
+                )
             except Exception:  # noqa: BLE001 - a read failure is not fatal to the daemon
                 return None
             return value[0] if value else None
 
     def _schedule_reconnect(self) -> None:
-        """Start a background reconnect loop, unless one is already running."""
+        """Start a background reconnect loop, unless one is already running or we're closed."""
+        if self._closed:
+            return
         if self._reconnect_task is not None and not self._reconnect_task.done():
             return
         self._reconnect_task = asyncio.ensure_future(self._reconnect())
 
     async def _reconnect(self) -> None:
-        while not self.is_connected:
+        while not self._closed and not self.is_connected:
             try:
                 client = self._factory(self._address)
                 await client.connect()
+                if self._closed:  # closed while connecting: don't resurrect the link
+                    await client.disconnect()
+                    return
                 self._client = client
                 return
             except Exception:  # noqa: BLE001 - keep retrying on the robot's own schedule
                 await asyncio.sleep(RECONNECT_BACKOFF)
 
     async def close(self) -> None:
-        """Disconnect and cancel any reconnect loop."""
+        """Disconnect and cancel any reconnect loop, awaiting it so it cannot reconnect."""
+        self._closed = True
         if self._reconnect_task is not None:
             self._reconnect_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._reconnect_task
         if self._client is not None:
             await self._client.disconnect()
             self._client = None

@@ -69,7 +69,14 @@ def parse_steps(items: list) -> list[Step]:
     for item in items:
         if not isinstance(item, dict):
             raise ProtocolError(f"each item must be an object, got {item!r}")
-        steps.extend(_parse_item(item))
+        try:
+            steps.extend(_parse_item(item))
+        except ProtocolError:
+            raise
+        except (ValueError, KeyError, TypeError) as exc:
+            # A typo'd move name, a non-numeric byte, a missing field — all become a
+            # structured error the client sees, never an unhandled crash on the socket.
+            raise ProtocolError(f"bad step item {item!r}: {exc}") from exc
     return steps
 
 

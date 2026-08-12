@@ -145,6 +145,42 @@ def test_concurrent_battery_read_and_write_do_not_interleave():
     asyncio.run(scenario())
 
 
+def test_close_during_a_reconnect_does_not_resurrect_the_link():
+    # A dropped link schedules a background reconnect. If the daemon shuts down while that
+    # reconnect is mid-connect, close() must cancel it and the link must stay down — a
+    # stray reconnect finishing after teardown would hold a robot no one is driving.
+    async def scenario():
+        gate = asyncio.Event()  # a reconnect's connect() blocks here until the test frees it
+
+        class GatedClient(FakeClient):
+            async def connect(self) -> None:
+                if self.connected is False and gate_used["armed"]:
+                    await gate.wait()  # the reconnect stalls here, mid-connect
+                self.connected = True
+
+        gate_used = {"armed": False}
+        clients: list[GatedClient] = []
+
+        def factory(_address: str) -> GatedClient:
+            client = GatedClient()
+            clients.append(client)
+            return client
+
+        conn = DaemonConnection("AA:BB", client_factory=factory)
+        await conn.connect()  # first client connects immediately
+        gate_used["armed"] = True
+        clients[-1].drop_on_write = True
+        with pytest.raises(DaemonConnectionError):
+            await conn.send_frame(NOOP)  # drops, schedules the (now-gated) reconnect
+        await asyncio.sleep(0)  # let the reconnect task reach the gate
+        await conn.close()  # cancels the in-flight reconnect and marks the link closed
+        gate.set()  # even if the cancelled connect were to wake, it must not resurrect
+        await asyncio.sleep(0)
+        assert not conn.is_connected
+
+    asyncio.run(scenario())
+
+
 def test_is_connected_tracks_connect_and_drop():
     async def scenario():
         conn, clients = make_connection()

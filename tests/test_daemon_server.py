@@ -143,9 +143,9 @@ def test_second_start_with_a_live_socket_refuses():
     server = make_server(d)
 
     async def body(sock):
-        other = make_server(d)  # same dir -> same socket path
+        other = make_server(d)  # same dir -> same lock path
         with pytest.raises(DaemonAlreadyRunning):
-            await other._acquire()
+            other._acquire()
 
     asyncio.run(_serve(server, body))
 
@@ -155,11 +155,26 @@ def test_stale_socket_is_cleared_and_startup_proceeds():
         server = make_server(sockdir())
         server._socket_path.parent.mkdir(parents=True, exist_ok=True)
         server._socket_path.write_bytes(b"stale")  # a regular file, not a live daemon
-        await server._acquire()  # detects it is not live, removes it, proceeds
+        server._acquire()  # takes the lock, removes the stale socket, proceeds
         assert server._lock_path.exists()
         server._release()
 
     asyncio.run(scenario())
+
+
+def test_a_bad_step_item_returns_a_structured_error_not_a_crash():
+    server = make_server(sockdir())
+
+    async def body(sock):
+        # A typo'd move name would raise KeyError deep in expansion; the server must turn
+        # it into an {"ok": false} reply and keep the connection alive for the next request.
+        bad = await _request(sock, {"op": "enqueue", "items": [{"move": "nope"}]})
+        assert bad["ok"] is False
+        assert "nope" in bad["error"]
+        good = await _request(sock, {"op": "status"})  # connection still usable
+        assert good["ok"] is True
+
+    asyncio.run(_serve(server, body))
 
 
 def test_malformed_json_returns_a_structured_error():
