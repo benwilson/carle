@@ -97,6 +97,7 @@ frame just often enough to deny that routine its window, and stays the sole hold
 uv run carle daemon start <address>      # hold the link and run the queue
 uv run carle queue wave                  # enqueue a named move (or pose:5, pause:1.0, say:hello)
 uv run carle queue face:47               # hold an LED expression (39-48); face:clear drops it
+uv run carle queue gesture:1             # pulse a 0xB2 arm gesture once (1-24 hand/arm codes)
 uv run carle status                      # connection, battery, current step, held face, queue depth
 uv run carle clear                       # drop pending steps
 uv run carle stop                        # abort now and return the robot to neutral

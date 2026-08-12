@@ -14,7 +14,7 @@ from carle import frame
 from carle.daemon import moves
 from carle.daemon.connection import DaemonConnectionError
 from carle.daemon.engine import NOOP, Engine
-from carle.daemon.steps import MediaStep, SayStep, StepMode, face, pose, travel, waist
+from carle.daemon.steps import MediaStep, SayStep, StepMode, face, gesture, pose, travel, waist
 
 
 class Clock:
@@ -139,6 +139,23 @@ def test_face_clear_and_stop_return_the_heartbeat_to_noop():
         await engine.tick()
         engine.stop()
         assert engine.status()["face"] is None  # stop drops the held face too
+
+    asyncio.run(scenario())
+
+
+def test_a_gesture_fires_once_and_is_never_reasserted():
+    # A 0xB2 gesture must be pulsed a single time — re-asserting it re-runs the motion and
+    # squeals the servos. So the frame appears exactly once, then never again, even as the
+    # heartbeat keeps ticking (a NOOP, not the gesture).
+    async def scenario():
+        engine, conn, clock = make_engine(silence_floor=1.0)
+        gesture_frame = frame.build(0xB2, [1])
+        engine.enqueue([gesture(1)])
+        for _ in range(30):  # three seconds of ticks
+            await engine.tick()
+            clock.advance(0.1)
+        assert conn.sent.count(gesture_frame) == 1  # fired once, never re-asserted
+        assert engine.status()["face"] is None  # a gesture is not held state
 
     asyncio.run(scenario())
 

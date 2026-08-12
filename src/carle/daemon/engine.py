@@ -32,6 +32,7 @@ from carle.daemon.connection import DaemonConnectionError
 from carle.daemon.steps import (
     SAFE_HOLD,
     FaceStep,
+    GestureStep,
     MediaStep,
     MovementStep,
     PauseStep,
@@ -212,9 +213,11 @@ class Engine:
                 self._current = step
                 self._current_deadline = now + step.duration
                 break
-            if isinstance(step, MediaStep):
+            if isinstance(step, (MediaStep, GestureStep)):
+                # Both are fire-and-forget triggers: sent once this tick, never held.
+                # A 0xB2 gesture must NOT be re-asserted or its motion re-runs and squeals.
                 media_frames.append(step.build())
-                continue  # media is a fire-and-forget trigger; the queue proceeds
+                continue
             if isinstance(step, FaceStep):
                 # Setting the face is instantaneous held state: record it and let the
                 # queue proceed. code 0 clears the hold so the idle face resumes.

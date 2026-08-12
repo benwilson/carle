@@ -124,7 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
         "items",
         nargs="+",
         metavar="MOVE|kind:value",
-        help="a move name (wave) or a primitive (pose:5, waist:1, face:39, pause:1.0, say:hello)",
+        help="a move (wave) or primitive (pose:5, face:39, gesture:1, pause:1.0, say:hello)",
     )
     sub.add_parser("clear", help="drop the daemon's pending queue")
     sub.add_parser("stop", help="abort now and return the robot to neutral")
@@ -454,6 +454,8 @@ def _tokens_to_items(tokens: list[str]) -> list[dict]:
             # face:39 holds an LED expression; face:clear (or face:off/0) drops the hold.
             code = 0 if value in ("clear", "off") else int(value)
             items.append({"face": code})
+        elif kind == "gesture":
+            items.append({"gesture": int(value)})  # pulse a 0xB2 limb/move code once
         elif kind == "pause":
             items.append({"pause": float(value)})
         elif kind == "say":

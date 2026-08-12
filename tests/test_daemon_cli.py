@@ -46,6 +46,12 @@ def test_queue_parses_face_tokens(capsys):
     assert fr.requests[0]["items"] == [{"face": 39}, {"face": 0}]
 
 
+def test_queue_parses_gesture_tokens(capsys):
+    fr = FakeRequester({"ok": True, "enqueued": 1})
+    main(["queue", "gesture:7"], requester=fr, daemon_live=lambda: False)
+    assert fr.requests[0]["items"] == [{"gesture": 7}]
+
+
 def test_queue_rejects_an_unknown_step_kind(capsys):
     fr = FakeRequester({"ok": True})
     code = main(["queue", "spin:9"], requester=fr, daemon_live=lambda: False)

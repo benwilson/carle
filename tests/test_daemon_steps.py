@@ -9,11 +9,13 @@ from carle.daemon import moves
 from carle.daemon.steps import (
     SAFE_HOLD,
     FaceStep,
+    GestureStep,
     MediaStep,
     MovementStep,
     SayStep,
     StepMode,
     face,
+    gesture,
     pose,
     waist,
 )
@@ -84,3 +86,18 @@ def test_protocol_parses_a_face_item():
     steps = parse_steps([{"face": 39}, {"face": 0}])
     assert [type(s) for s in steps] == [FaceStep, FaceStep]
     assert [s.code for s in steps] == [39, 0]
+
+
+def test_gesture_step_builds_the_expected_0xb2_frame():
+    # A limb/move gesture is one 0xB2 action code (1-38), pulsed once.
+    assert GestureStep(code=1).build() == frame.build(0xB2, [1])
+    assert gesture(7).build() == frame.build(0xB2, [7])
+    assert gesture(1).step_mode is StepMode.SPAWN
+
+
+def test_protocol_parses_a_gesture_item():
+    from carle.daemon.protocol import parse_steps
+
+    steps = parse_steps([{"gesture": 5}])
+    assert type(steps[0]) is GestureStep
+    assert steps[0].code == 5
