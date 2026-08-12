@@ -96,7 +96,8 @@ frame just often enough to deny that routine its window, and stays the sole hold
 ```bash
 uv run carle daemon start <address>      # hold the link and run the queue
 uv run carle queue wave                  # enqueue a named move (or pose:5, pause:1.0, say:hello)
-uv run carle status                      # connection, battery, current step, queue depth
+uv run carle queue face:47               # hold an LED expression (39-48); face:clear drops it
+uv run carle status                      # connection, battery, current step, held face, queue depth
 uv run carle clear                       # drop pending steps
 uv run carle stop                        # abort now and return the robot to neutral
 uv run carle daemon stop                 # shut the daemon down
@@ -122,10 +123,14 @@ crashing.
 selected as the host's system audio output, it plays any host audio — so a `say:` step (macOS
 `say`) speaks through the robot. The daemon does not pair or route audio; that is host setup.
 
-**Not yet hardware-validated.** The daemon is built and unit-tested against fakes, but nothing
-in it has run against a charged robot. The heartbeat interval beating the idle timer, the
-servo-safe cadence, the neutral-return, reconnect resume, whether the robot acts on a compound
-multi-joint frame, and whether audio and motion run together all await a live session.
+**Partly hardware-validated (2026-08-12).** A first live session confirmed the core: the daemon
+holds a real BLE link, `carle queue face:N` holds an LED expression, and the heartbeat genuinely
+beats the idle timer — streaming a frame continuously crowds the idle routine out, which is how
+each expression face was held long enough to read (see the protocol reference's Expression
+codes). Still awaiting a live session: the servo-safe movement cadence, the neutral-return,
+reconnect resume, whether the robot acts on a compound multi-joint frame, and whether audio and
+motion run together. On the test unit the standard battery read returned nothing, so `status`
+showed the battery as unknown.
 
 ### macOS: grant Bluetooth permission first
 
