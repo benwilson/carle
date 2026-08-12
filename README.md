@@ -110,6 +110,11 @@ servo-safe timing the little geared joints need — driven too fast, they squeal
 daemon exposes the same queue to AI agents through an MCP server (`carle-mcp`, installed with
 `pip install 'carle[mcp]'`).
 
+The mappings themselves can be re-derived from the hardware: `carle observe` is an autonomous,
+camera-in-the-loop harness that drives each arm code, watches the robot through a webcam, and
+writes what it reproduces into the protocol reference — see
+[`docs/observe-loop.md`](docs/observe-loop.md).
+
 Because the daemon is the sole link-holder, `carle send/connect/info` refuse while it is
 running — stop the daemon, or drive through `carle queue`. The daemon supersedes the earlier
 `tools/keepalive.py`, which is kept, marked deprecated, only as the single-purpose experiment
