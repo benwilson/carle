@@ -14,7 +14,7 @@ from carle import frame
 from carle.daemon import moves
 from carle.daemon.connection import DaemonConnectionError
 from carle.daemon.engine import NOOP, Engine
-from carle.daemon.steps import MediaStep, SayStep, StepMode, pose, travel, waist
+from carle.daemon.steps import MediaStep, SayStep, StepMode, face, pose, travel, waist
 
 
 class Clock:
@@ -94,6 +94,51 @@ def test_heartbeat_fires_after_the_silence_floor():
         await engine.tick()
         assert len(conn.sent) == baseline + 1
         assert conn.sent[-1] == NOOP
+
+    asyncio.run(scenario())
+
+
+def test_a_held_face_is_reasserted_as_the_heartbeat():
+    # A face is held display state: once set, the heartbeat re-asserts that 0xB2 frame
+    # (never a bare NOOP) so the idle routine cannot repaint the LED face between frames.
+    async def scenario():
+        engine, conn, clock = make_engine(silence_floor=1.0)
+        face_frame = frame.build(0xB2, [39])
+        engine.enqueue([face(39)])
+        await engine.tick()  # t=0: the baseline movement NOOP goes out first
+        clock.advance(0.1)
+        await engine.tick()  # t=0.1: a newly-set face is asserted at once, not on the floor
+        assert conn.sent[-1] == face_frame
+        assert engine.status()["face"] == 39
+        clock.advance(1.1)  # cross the silence floor
+        await engine.tick()
+        assert conn.sent[-1] == face_frame  # the heartbeat re-asserted the face, not a NOOP
+
+    asyncio.run(scenario())
+
+
+def test_face_clear_and_stop_return_the_heartbeat_to_noop():
+    async def scenario():
+        engine, conn, clock = make_engine(silence_floor=1.0)
+        engine.enqueue([face(39)])
+        await engine.tick()
+        clock.advance(0.1)
+        await engine.tick()  # face held
+        assert engine.status()["face"] == 39
+
+        engine.enqueue([face(0)])  # 0 clears the hold
+        clock.advance(0.1)
+        await engine.tick()
+        assert engine.status()["face"] is None
+        clock.advance(1.1)
+        await engine.tick()  # past the floor: heartbeat is a bare NOOP again
+        assert conn.sent[-1] == NOOP
+
+        engine.enqueue([face(41)])  # set another, then abort
+        clock.advance(0.1)
+        await engine.tick()
+        engine.stop()
+        assert engine.status()["face"] is None  # stop drops the held face too
 
     asyncio.run(scenario())
 

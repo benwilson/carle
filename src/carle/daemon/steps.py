@@ -26,6 +26,7 @@ SAFE_HOLD = 0.5
 
 MOVEMENT_FAMILY = 0xB6
 MEDIA_FAMILY = 0xB3
+EXPRESSION_FAMILY = 0xB2
 
 
 class StepMode(Enum):
@@ -84,7 +85,25 @@ class MediaStep:
         return frame.build(MEDIA_FAMILY, [self.sub, self.index])
 
 
-Step = MovementStep | PauseStep | SayStep | MediaStep
+@dataclass(frozen=True)
+class FaceStep:
+    """Set the robot's LED face to one `0xB2` expression code, or clear it.
+
+    Unlike a media trigger, a face is *held display state*: the engine re-asserts the
+    held code on its heartbeat cadence so the robot's idle routine cannot repaint the
+    face between frames (docs/protocol-reference.md, family 0xB2). `code` 0 clears the
+    hold and lets the idle face resume. The expression codes are 39-48 (five faces, in
+    odd/even pairs); the engine sends whatever code it is given.
+    """
+
+    code: int
+    step_mode: StepMode = StepMode.SPAWN  # setting the face never blocks the queue
+
+    def build(self) -> bytes:
+        return frame.build(EXPRESSION_FAMILY, [self.code])
+
+
+Step = MovementStep | PauseStep | SayStep | MediaStep | FaceStep
 
 
 # --- Readable constructors for the primitives macros are built from -----------------
@@ -111,3 +130,8 @@ def travel(
 ) -> MovementStep:
     """Walk (mode 1) or slide (mode 2) a heading. This moves the robot across the floor."""
     return MovementStep(mode=mode, speed=speed, direction=direction, hold=hold, step_mode=step_mode)
+
+
+def face(code: int) -> FaceStep:
+    """Hold an LED expression code (39-48), or clear the held face with 0."""
+    return FaceStep(code=code)

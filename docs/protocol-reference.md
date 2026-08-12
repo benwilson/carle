@@ -203,7 +203,7 @@ artwork:
 | 1-12 | Left hand | the six left-side limb poses |
 | 13-24 | Right hand | the six right-side limb poses |
 | 25-38 | Move | the waist sway (`action_yao`), forward and backward slide-steps (`qianhuabu`, `houhuabu`), and other locomotion |
-| 39-48 | Expression | facial expressions (`smile1`-`smile5`) |
+| 39-48 | Expression | facial expressions — **mapped on hardware**, see [Expression codes](#expression-codes-39-48-on-hardware) below |
 | 49-58 | Music | music tracks |
 
 That maps the sequence vocabulary onto the same repertoire the other families reach — the limb
@@ -214,6 +214,34 @@ settled, since the app binds a code to an icon, not to a description.
 This frame is **not** in the command table below: the table models fixed payloads with named
 parameters, and a variable-length code list does not fit that shape without a schema change. It
 is recorded here instead.
+
+### Expression codes (39-48), on hardware
+
+The Expression tab's ten codes were driven on a real robot on 2026-08-12. Each was held on the
+LED face by the control-plane daemon streaming its `0xB2` frame continuously, so the robot's
+idle routine could not repaint the face between frames — which is also the first confirmation
+that the daemon's heartbeat denies the idle routine its window (it crowds it out, rather than
+switching it off). The ten codes resolve to **five distinct faces**, paired **odd-with-even**:
+39 and 40 show the same face, 41 and 42 the same, and so on, so the tab's ten buttons are five
+expressions, not ten. Several faces are **animated** (a moving mouth or eyes), not static. The
+faces, as described by the operator watching the robot:
+
+| Codes | Frame (odd code) | Face on hardware |
+|---|---|---|
+| 39, 40 | `B2 01 27 27 AA` | Frowning — sad. |
+| 41, 42 | `B2 01 29 29 AA` | Wide eyes, mouth animated in a small rotating "spinny" motion — reads as laughing. |
+| 43, 44 | `B2 01 2B 2B AA` | Squinted/closed eyes with a talking mouth — concentrating while talking. |
+| 45, 46 | `B2 01 2D 2D AA` | Open eyes, a plain talking mouth — a neutral "talking" face, neither happy nor sad. |
+| 47, 48 | `B2 01 2F 2F AA` | A big open smile — happy. |
+
+The app's own preview icons (`smile1`-`smile5`) proved a poor guide to the hardware faces: the
+art and the LED render do not line up (the icon read as neutral for 39 is a frown on the robot;
+the one read as angry for 47 is the big smile). These are recorded from the robot, not the icons.
+
+This is the first `0xB2` code range checked on hardware. The strongest claim here is the same
+one the command table makes: the tool sent exactly these frames and the operator reported what
+the face did. Writes go out without a response, so a send means the host's Bluetooth stack took
+the bytes, and the face column is a human report.
 
 One more write does not follow the envelope at all. A couple of seconds after connecting, the
 device screen writes a bare single byte `0x01` to the control characteristic — twice, on two
@@ -231,9 +259,12 @@ on release streams frames with the direction and speed bytes zeroed. So movement
 sending a zero-motion frame, not by a dedicated command. Nothing the app sends interrupts the
 idle routine or stops media playback once started; those have no off switch on this channel.
 
-**Not yet documented.** What each `0xB2` action code actually does on hardware, and any way to
-halt the idle routine or media playback — the app has none, though the 2.4 GHz remote carries an
-unexamined centre key that may.
+**Not yet documented.** What the `0xB2` limb/move codes (1-38) and music codes (49-58) do on
+hardware — only the expression codes (39-48) above have been read on hardware. And any way to *halt* the idle
+routine or media playback — the app has none, though the 2.4 GHz remote carries an unexamined
+centre key that may. Note that streaming frames continuously does *crowd out* the idle routine
+(the expression faces above were held that way), but that is denying it a silence window, not an
+off switch.
 
 ## Audio channel
 

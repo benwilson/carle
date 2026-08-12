@@ -15,6 +15,7 @@ import json
 
 from carle.daemon import moves
 from carle.daemon.steps import (
+    FaceStep,
     MediaStep,
     PauseStep,
     SayStep,
@@ -61,7 +62,8 @@ def parse_steps(items: list) -> list[Step]:
 
     Item shapes: `{"move": "wave"}` (a macro), `{"pose": N, "hold": s}`,
     `{"waist": v, "hold": s}`, `{"travel": {...}}`, `{"pause": s}`,
-    `{"say": text, "mode": "spawn"}`, `{"media": {"sub": n, "index": n}}`.
+    `{"say": text, "mode": "spawn"}`, `{"media": {"sub": n, "index": n}}`,
+    `{"face": N}` (hold LED expression code N, 0 clears).
     """
     if not isinstance(items, list):
         raise ProtocolError("enqueue 'items' must be a list")
@@ -100,6 +102,8 @@ def _parse_item(item: dict) -> list[Step]:
                 step_mode=_step_mode(item, StepMode.AWAIT),
             )
         ]
+    if "face" in item:
+        return [FaceStep(int(item["face"]), step_mode=_step_mode(item, StepMode.SPAWN))]
     if "pause" in item:
         return [PauseStep(float(item["pause"]), step_mode=_step_mode(item, StepMode.AWAIT))]
     if "say" in item:
