@@ -62,6 +62,34 @@ def test_disconnected_robot_halts_before_driving(capsys):
     assert driven["n"] == 0  # never drove a dead robot (R11)
 
 
+def test_critically_low_battery_halts_before_driving(capsys):
+    driven = {"n": 0}
+
+    def derive(_f, _c):
+        driven["n"] += 1
+        return None
+
+    def low_battery(_req):
+        return {"ok": True, "status": {"connected": True, "battery": 3}}
+
+    code = main(
+        ["observe"],
+        daemon_live=lambda: True,
+        requester=low_battery,
+        observe_derive=derive,
+        observe_record=lambda r: None,
+    )
+    assert code == 1
+    assert "battery critically low" in capsys.readouterr().err
+    assert driven["n"] == 0  # never drove on a dying battery (R11)
+
+
+def test_unknown_family_in_codes_is_rejected(capsys):
+    code = main(["observe", "--dry-run", "--codes", "legs:5"], daemon_live=lambda: False)
+    assert code == 1
+    assert "unknown family" in capsys.readouterr().err
+
+
 def test_capture_error_midrun_stops_and_reports_count(capsys):
     calls = {"n": 0}
 

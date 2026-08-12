@@ -21,6 +21,9 @@ WAIST = "waist"
 #: family -> the enqueue item key the daemon's protocol.parse_steps understands.
 _ITEM_KEY = {GESTURE: "gesture", POSE: "pose", WAIST: "waist"}
 
+#: The movement families the driver can drive today (the observe loop validates against this).
+FAMILIES = frozenset(_ITEM_KEY)
+
 
 class DriverError(Exception):
     """Raised when a code cannot be driven — no live daemon, or an unknown family."""

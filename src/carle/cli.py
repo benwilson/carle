@@ -580,7 +580,13 @@ def _default_observe_codes() -> list[tuple[str, int]]:
     return [("pose", n) for n in range(1, 13)] + [("gesture", n) for n in range(1, 25)]
 
 
+#: Halt an observe run rather than drive a robot whose known battery is this low or lower.
+OBSERVE_MIN_BATTERY = 5
+
+
 def _parse_observe_codes(spec: str) -> list[tuple[str, int]]:
+    from carle.observe.driver import FAMILIES
+
     codes: list[tuple[str, int]] = []
     for token in spec.split(","):
         token = token.strip()
@@ -589,6 +595,8 @@ def _parse_observe_codes(spec: str) -> list[tuple[str, int]]:
         family, _, value = token.partition(":")
         if not value:
             raise ValueError(f"code {token!r} is not family:number")
+        if family not in FAMILIES:
+            raise ValueError(f"unknown family {family!r}; expected one of {sorted(FAMILIES)}")
         codes.append((family, int(value)))
     return codes
 
@@ -628,6 +636,13 @@ def _run_observe(args, requester, daemon_live, derive, record) -> int:
     if not status.get("connected", False):
         print(
             "error: robot is not connected (dropped link or dead battery) — stopping",
+            file=sys.stderr,
+        )
+        return 1
+    battery = status.get("battery")
+    if battery is not None and battery <= OBSERVE_MIN_BATTERY:
+        print(
+            f"error: robot battery critically low ({battery}%) — stopping",
             file=sys.stderr,
         )
         return 1

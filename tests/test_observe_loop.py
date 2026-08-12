@@ -113,3 +113,13 @@ def test_observations_agree_helper():
     assert observations_agree(obs(), obs())
     assert not observations_agree(obs(motion="raise"), obs(motion="lower"))
     assert not observations_agree(obs(confidence=0.2), obs(confidence=0.2))
+
+
+def test_direction_is_advisory_not_an_agreement_axis():
+    # Same joint + motion but different finer direction still agree (KTD8: joint + motion).
+    a = obs(direction="up")
+    b = obs(direction="out")
+    assert observations_agree(a, b)
+    drive, capture, judge, _calls, _clips = _seams([a, b])
+    result = derive_code("gesture", 1, drive=drive, capture=capture, judge=judge)
+    assert result.confirmed

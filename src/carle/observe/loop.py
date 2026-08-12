@@ -21,7 +21,9 @@ DEFAULT_RETRY_LIMIT = 2
 
 #: The variation ladder, in order — each rung tells the capture/drive seams how to differ so a
 #: subtle or ambiguous motion becomes legible (KTD6). The raise-first rung deliberately changes
-#: the before-pose to exaggerate the motion.
+#: the before-pose to exaggerate the motion. The ladder is a superset of the default attempt
+#: budget: the last rung ("repeat the pulse") is reached only at a higher `--retries`, and the
+#: index is clamped to the last rung so a short budget simply uses the earlier rungs.
 DEFAULT_VARIATIONS: tuple[str, ...] = ("baseline", "brighter", "longer", "raise_first", "repeat")
 
 
@@ -37,8 +39,11 @@ class Observation:
     notes: str = ""
 
     @property
-    def key(self) -> tuple[str, str, str]:
-        return (self.joint, self.motion, self.direction)
+    def key(self) -> tuple[str, str]:
+        # Agreement is on joint + motion (KTD8). `direction` is optional finer detail the
+        # writer keeps, not an agreement axis — else a judge filling it inconsistently across
+        # two otherwise-matching reads would spuriously route the code to "uncertain".
+        return (self.joint, self.motion)
 
 
 @dataclass(frozen=True)
