@@ -113,7 +113,9 @@ daemon exposes the same queue to AI agents through an MCP server (`carle-mcp`, i
 The mappings themselves can be re-derived from the hardware: `carle observe` is an autonomous,
 camera-in-the-loop harness that drives each arm code, watches the robot through a webcam, and
 writes what it reproduces into the protocol reference — see
-[`docs/observe-loop.md`](docs/observe-loop.md).
+[`docs/observe-loop.md`](docs/observe-loop.md). Composed into human-facing gestures, the arm
+joints give a small vocabulary of held poses — waves, celebrations, a handshake offer — mapped
+in [`docs/pose-vocabulary.md`](docs/pose-vocabulary.md).
 
 Because the daemon is the sole link-holder, `carle send/connect/info` refuse while it is
 running — stop the daemon, or drive through `carle queue`. The daemon supersedes the earlier
