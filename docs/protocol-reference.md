@@ -244,8 +244,8 @@ artwork:
 
 That maps the sequence vocabulary onto the same repertoire the other families reach — the limb
 joints, the waist, sliding, plus expressions and music the command table does not otherwise
-expose. The tab names are the app's own; what each individual code does on hardware is still not
-settled, since the app binds a code to an icon, not to a description.
+expose. The tab names are the app's own; what each code does on hardware — once a matter of
+guessing from an icon — has since been read directly, tab by tab, in the sections below.
 
 This frame is **not** in the command table below: the table models fixed payloads with named
 parameters, and a variable-length code list does not fit that shape without a schema change. It
@@ -335,8 +335,10 @@ that same byte back to `0` about 200 ms later, so the send that "does" the motio
 non-zero one and the zero only clears the register — the joint itself holds its new position.
 The joystick screen streams the movement frame on a 100 ms timer for as long as it is held, and
 on release streams frames with the direction and speed bytes zeroed. So movement is halted by
-sending a zero-motion frame, not by a dedicated command. Nothing the app sends interrupts the
-idle routine or stops media playback once started; those have no off switch on this channel.
+sending a zero-motion frame, not by a dedicated command. The app itself sends nothing that
+interrupts the idle routine or stops media playback once started — it exposes no off switch on
+this channel. (A `0xB6` movement frame does cut both, as the on-hardware notes below record, but
+the app never uses one for that.)
 
 ### Move codes (25-38), on hardware
 
@@ -358,13 +360,49 @@ So the Move tab is the app's dance repertoire — swaying in place with a few le
 variants — not a walking channel. Travel lives on the `0xB6` movement frame, whose own
 turn-then-travel gait is described in [movement-vocabulary.md](movement-vocabulary.md).
 
-**Not yet documented.** What the `0xB2` music codes (49-58) do on hardware — the hand/arm codes
-(1-24), Move codes (25-38) and expression codes (39-48) above have been read on hardware, the
-music codes not yet. And any way to *halt* the idle
-routine or media playback — the app has none, though the 2.4 GHz remote carries an unexamined
-centre key that may. Note that streaming frames continuously does *crowd out* the idle routine
-(the expression faces above were held that way), but that is denying it a silence window, not an
-off switch.
+### Music codes (49-58), on hardware
+
+The Music tab was driven on a real robot on 2026-08-12. These codes are **audio**: each one
+triggers a short onboard melody through the robot's speaker. Reading them relied on the operator
+listening, since the frames carry no sound back. What the session settled:
+
+- Each code plays a **short melody snippet** — a second or two, distinct from code to code; codes
+  49 and 50 open with a spoken "Music" before their melody.
+- Like the Move and gesture codes, a music code **re-triggers on every frame**: re-sending one
+  restarts its melody from the top, so it must be pulsed once, not streamed.
+- The snippets **truncate to a second or two on their own**, independent of anything the host
+  sends — they are short building blocks, not full-length songs. Full songs live in the media
+  family (`0xB3`), which the command table reaches.
+
+This is also where the `0xB2` frame's **sequence** shape stops being a decompile inference and
+becomes something read on hardware. A single frame carrying two codes — `B2 02 33 01 34 AA`, i.e.
+code 51 then code 1 — played code 51's melody **first** and code 1's action **after**, in order,
+from the one frame. So the payload really is an ordered list of action codes the robot runs in
+turn: the Music tab supplies short musical ingredients for the app's custom-sequence composer, not
+a track selector.
+
+### Media library (0xB3), on hardware
+
+The same session drove all four `0xB3` media categories, and each ran its routine: **gymnastics**
+(the robot bounces), **story** (it narrates a fairy tale), **dance** (it dances to a song) and
+**music** (a full song, e.g. "If You're Happy and You Know It"). Two things the session settled
+about the media frame's second byte, the `index`:
+
+- **The `index` does not select a specific track.** Firing the same story index twice played two
+  *different* stories, so the robot cycles through each category's library on its own, one item
+  per trigger — the `index` value does not steer it. That settles the decompile's open question
+  and matches its "single trigger per category, cycles internally" reading.
+- Media has a **short startup gap** before it begins, and — like the `0xB2` melodies — a `0xB6`
+  movement frame **cuts it off**. So the control-plane daemon's zero-motion heartbeat, streamed
+  on a timer, truncates media and melodies alike; a client that wants sound to play must go quiet
+  while it runs.
+
+**Fully read now.** All five `0xB2` tabs have been read on hardware — hand/arm (1-24), Move
+(25-38), expression (39-48) and music (49-58). What is still open is any clean way to *halt* the
+idle routine from the app — it has none, though the 2.4 GHz remote carries an unexamined centre
+key that may. Streaming frames continuously *crowds out* the idle routine (the expression faces
+above were held that way), and a `0xB6` movement frame cuts audio and media outright, but neither
+is an off switch the app itself exposes.
 
 ## Audio channel
 

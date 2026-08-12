@@ -11,17 +11,19 @@ documentation and to keep it honest.
 ## Status
 
 The whole BLE surface is documented from the official Android app — all four command families,
-the firmware-update stack, and the controller chip — and hardware sessions have confirmed the
-movement and media commands and driven the robot live: waving, a short dance, and speaking
-through its own speaker.
+the firmware-update stack, and the controller chip — and a series of hardware sessions have driven
+the robot live and read back what each command actually does: arm poses and gestures, the dance
+and expression repertoire, walking and turning across the floor, and the onboard songs, stories
+and speech.
 
 | Area | State |
 |---|---|
 | BLE service and characteristic UUIDs | Documented |
 | Command frame format (all four families) | Documented |
 | Movement / limbs (`0xB6`) | Confirmed on hardware, mapped across the parameter space |
-| Media and volume (`0xB3`) | Confirmed frame-for-frame |
-| Gyro / tilt (`0xB5`) and sequences (`0xB2`) | Decoded from the app |
+| Media (`0xB3`) — songs, dances, stories, gymnastics | Confirmed on hardware; robot cycles a category's items, no per-track select |
+| Sequences (`0xB2`) — hand, Move, expression, music tabs | Read on hardware, all five tabs; the frame is a confirmed action-sequence composer |
+| Gyro / tilt (`0xB5`) | Decoded from the app |
 | Command encodings | 7 derived from the app; 3 confirmed on hardware |
 | Hardware observations | 28 across 3 commands, backed by 210 committed send logs |
 | Notify characteristic + robot state | Documented — notify is discarded; battery/versions come via reads |
@@ -29,15 +31,36 @@ through its own speaker.
 | Firmware update (OTA/DFU) and chip | Documented from the app (Realtek `RTL8763B`) |
 | CLI scan / connect / info / send / confirm | Working |
 | Driving the robot (movement, media, audio) | Working |
-| Control-plane daemon (queue, heartbeat, CLI + MCP, state) | Built; unit-tested against fakes, not yet hardware-validated |
+| Control-plane daemon (queue, heartbeat, CLI + MCP, state) | Built; hardware-validated driving moves, faces, gestures and media — heartbeat must pause while audio plays |
 
-What remains needs the hardware or the iOS app, not more decompiling: what the `0xB2` music
-codes (49-58) do on a real robot, and the firmware image (behind a geo-fenced vendor server).
-The `0xB2` Move codes (25-38) and a low-speed pivot-in-place have since been read on hardware —
-the Move tab is a dance repertoire, not a walking channel, and the `0xB6` gait turns in place at
-low speed and travels at high speed. [`docs/protocol-reference.md`](docs/protocol-reference.md) is the
-full reference; [`docs/movement-vocabulary.md`](docs/movement-vocabulary.md) maps plain-language
-moves to the byte primitives, with servo-safe timing.
+The movement, sequence and media surfaces have now been read on hardware end to end. What remains
+needs the hardware in ways decompiling can't reach, or the iOS app: the firmware image (behind a
+geo-fenced vendor server), and a handful of fine details the setup couldn't measure (individual
+song lengths, for one — the robot sends no playback signal and the room mic was too far to time
+them). [`docs/protocol-reference.md`](docs/protocol-reference.md) is the full reference, and
+[`docs/movement-vocabulary.md`](docs/movement-vocabulary.md) maps plain-language moves to the byte
+primitives with servo-safe timing.
+
+### What the hardware sessions established
+
+Driving the robot live — a camera-in-the-loop harness for motion, an operator's ear for audio —
+mapped behaviour the decompile could only guess at:
+
+- **Movement is a turn-then-travel gait.** A `0xB6` heading drive turns the robot toward the
+  heading and then walks it, so at **low speed it pivots roughly in place** (a usable in-place
+  turn — long an open question) and at **high speed it travels** across the floor.
+- **The Move tab is a dance repertoire, not locomotion.** Its fourteen `0xB2` codes are canned
+  sway / lean / turn routines with the feet planted; walking lives on `0xB6`.
+- **Five LED expression faces**, each held on screen by streaming its frame so the idle routine
+  can't repaint it.
+- **`0xB2` is a confirmed action-sequence composer.** One frame carries an ordered list of action
+  codes and the robot runs them in turn — the basis of the app's "programmable commands", and read
+  directly on hardware rather than inferred.
+- **The `0xB3` media library plays** songs, dances, stories and gymnastics — but the robot cycles
+  each category's items itself; the frame's `index` byte does **not** select a specific track.
+- **Audio and the movement heartbeat don't mix.** A `0xB6` frame interrupts both `0xB2` melodies
+  and `0xB3` media, and the robot pushes no playback signal back — so the control-plane daemon has
+  to fall silent while sound plays.
 
 ### What the first decompile changed
 
@@ -48,8 +71,9 @@ commands. Movement collapsed the same way: one parameterized command with an eig
 direction field rather than six directional ones.
 
 The original rows are kept and marked `unlocated` with `superseded_by`, not deleted, so the
-collapse stays traceable — and so they are already in place if the unused payload byte turns
-out to select an individual track.
+collapse stays traceable. A live test has since settled the open question there: the payload's
+`index` byte does **not** select an individual track — the robot cycles a category's items on its
+own — so the one-command-per-category collapse holds.
 
 The fourteen voice commands appear nowhere in the Bluetooth layer. They look like onboard
 speech recognition with no protocol surface at all.
@@ -131,14 +155,17 @@ crashing.
 selected as the host's system audio output, it plays any host audio — so a `say:` step (macOS
 `say`) speaks through the robot. The daemon does not pair or route audio; that is host setup.
 
-**Partly hardware-validated (2026-08-12).** A first live session confirmed the core: the daemon
-holds a real BLE link, `carle queue face:N` holds an LED expression, and the heartbeat genuinely
-beats the idle timer — streaming a frame continuously crowds the idle routine out, which is how
-each expression face was held long enough to read (see the protocol reference's Expression
-codes). Still awaiting a live session: the servo-safe movement cadence, the neutral-return,
-reconnect resume, whether the robot acts on a compound multi-joint frame, and whether audio and
-motion run together. On the test unit the standard battery read returned nothing, so `status`
-showed the battery as unknown.
+**Hardware-validated (2026-08-12).** Extended live sessions drove the daemon through most of its
+surface: it holds a real BLE link across long runs, holds an LED expression with `carle queue
+face:N`, pulses hand/arm gestures and `0xB6` limb poses, walks and turns the robot across the
+floor, and plays both the `0xB2` melody snippets and the `0xB3` media library. The heartbeat
+genuinely beats the idle timer — streaming a frame continuously crowds the idle routine out, which
+is how each expression face and held pose stayed put. One firm lesson: **the heartbeat cannot run
+while audio plays** — a `0xB6` frame cuts `0xB2` melodies and `0xB3` media alike, so the daemon
+must go quiet during sound. Still untested: reconnect-resume after a dropped link, and whether a
+single `0xB6` frame can drive more than one joint at once (compound poses here were built by
+pulsing one joint at a time). On the test unit the standard battery read returns nothing, so
+`status` shows the battery as unknown — the robot announces low battery by voice instead.
 
 ### macOS: grant Bluetooth permission first
 
