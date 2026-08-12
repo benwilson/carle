@@ -152,6 +152,14 @@ came out of the camera-in-the-loop pose experiment: a "Y" driving both axes on b
 higher and wider than a lateral-only "T", and on the left arm the diagonal held apart from both
 forward-only and lateral-only across independent captures.
 
+A follow-up tightened this into a full arm model. On the **left arm all three axes compose**:
+forward (1), lateral (5), and elbow (9) held together land the arm high, out to the side, and
+bent — a distinct three-axis pose, reproduced across captures. So each arm is a genuine 3-DOF
+system. The right arm mirrors the geometry, but its **lateral axis (limb 7) under-extends** on
+this unit — a weaker servo than the left's limb 5, seen across repeated captures — so the right
+"diagonal" comes out shallower than the left's. That asymmetry is a hardware trait of this
+particular robot, not a difference in the codes.
+
 Eleven of the twelve values were watched directly. Value 2 was not: it is inferred as the
 left-arm return from the way 3 and 4 pair on the right. A log for it exists, but the
 observations table below carries no row for it, because an inference behind an evidence link

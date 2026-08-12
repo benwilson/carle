@@ -70,7 +70,7 @@ Left arm then right, odd raises / even returns.
 | 1 / 2 | left arm | 1 raises the whole arm out front to ~chest height (a "handshake offer") and holds; 2 lowers it | observed once |
 | 3 / 4 | right arm | mirror of 1/2 on the right | observed once |
 | 5 / 6 | left shoulder | arm held straight out at chest height, swings **left↔right horizontally** — a lateral sweep, not an up/down flap | **confirmed** |
-| 7 / 8 | right shoulder | mirror of 5/6 on the right | inferred |
+| 7 / 8 | right shoulder | mirror of 5/6 on the right, but the lateral raise **under-extends** on this unit — a weaker servo than the left's 5/6 | observed once |
 | 9 / 10 | left elbow | forearm bends up/down at the elbow; with the arm already raised it bobs the fist | **confirmed** |
 | 11 / 12 | right elbow | mirror of 9/10 on the right | inferred |
 
