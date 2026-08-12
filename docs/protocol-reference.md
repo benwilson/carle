@@ -120,6 +120,13 @@ Two earlier readings of this byte were published and withdrawn — first as rota
 travelling, then as selecting which leg leads. Both came from watching a gait across a room,
 which does not distinguish reliably. Stepping versus rolling does.
 
+A later camera session (2026-08-12) adds a second axis to the rotating-versus-travelling
+question, on the direction and speed bytes rather than this one: at low speed a heading drive
+turns the robot close to in place, while at high speed the same drive carries it along the
+heading. So the withdrawn "rotating" reading was the low-speed end of one speed-dependent
+turn-then-travel gait, not a separate behaviour — a low-speed drive is a usable in-place pivot.
+See [movement-vocabulary.md](movement-vocabulary.md).
+
 The app writes 1 or 2 here and never 0. The vendor's 2.4 GHz remote carries two separate
 four-way pads, which is consistent with two movement modes, though a remote is a different
 radio and its buttons are not a measurement.
@@ -231,7 +238,7 @@ artwork:
 |---|---|---|
 | 1-12 | Left hand | the six left-side limb poses |
 | 13-24 | Right hand | the six right-side limb poses |
-| 25-38 | Move | the waist sway (`action_yao`), forward and backward slide-steps (`qianhuabu`, `houhuabu`), and other locomotion |
+| 25-38 | Move | the waist sway (`action_yao`), forward and backward slide-steps (`qianhuabu`, `houhuabu`), and other locomotion — **read on hardware**, see [Move codes](#move-codes-25-38-on-hardware) below |
 | 39-48 | Expression | facial expressions — **mapped on hardware**, see [Expression codes](#expression-codes-39-48-on-hardware) below |
 | 49-58 | Music | music tracks |
 
@@ -331,9 +338,29 @@ on release streams frames with the direction and speed bytes zeroed. So movement
 sending a zero-motion frame, not by a dedicated command. Nothing the app sends interrupts the
 idle routine or stops media playback once started; those have no off switch on this channel.
 
-**Not yet documented.** What the `0xB2` move codes (25-38) and music codes (49-58) do on
-hardware — the hand/arm codes (1-24) and expression codes (39-48) above have been read on
-hardware, the rest not yet. And any way to *halt* the idle
+### Move codes (25-38), on hardware
+
+The Move tab's fourteen codes were driven on a real robot on 2026-08-12, one at a time, with the
+daemon holding the link and a camera watching the whole body at floor level. They are **canned
+dance routines** — not single-joint primitives, and **not floor locomotion**: the feet stay
+planted and the robot does not travel. Each fires once like the hand gestures (it re-runs its
+motion on every frame, so pulse it once, never stream it). Most of the tab is variations on one
+motion, with a few standouts:
+
+| Codes | Frame (first code) | Motion on hardware |
+|---|---|---|
+| 25, 26, 31-38 | `B2 01 19 19 AA` | an in-place **side-to-side torso sway / rock** at the waist — head tilting, arms swinging a little, feet planted — that returns to standing. Ten of the fourteen codes are variations of this (amplitude, a little knee-bend, a wider stance) and are not distinct enough to name apart. |
+| 27 | `B2 01 1B 1B AA` | a larger forward **lean / bow** with a twist, bending toward the floor. |
+| 28 | `B2 01 1C 1C AA` | an in-place **~90° turn** that leaves the robot re-oriented — it does not return to front. |
+| 29, 30 | `B2 01 1D 1D AA` | **turn-and-sway** routines that also re-orient the robot. |
+
+So the Move tab is the app's dance repertoire — swaying in place with a few lean and turn
+variants — not a walking channel. Travel lives on the `0xB6` movement frame, whose own
+turn-then-travel gait is described in [movement-vocabulary.md](movement-vocabulary.md).
+
+**Not yet documented.** What the `0xB2` music codes (49-58) do on hardware — the hand/arm codes
+(1-24), Move codes (25-38) and expression codes (39-48) above have been read on hardware, the
+music codes not yet. And any way to *halt* the idle
 routine or media playback — the app has none, though the 2.4 GHz remote carries an unexamined
 centre key that may. Note that streaming frames continuously does *crowd out* the idle routine
 (the expression faces above were held that way), but that is denying it a silence window, not an

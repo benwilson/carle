@@ -31,9 +31,11 @@ through its own speaker.
 | Driving the robot (movement, media, audio) | Working |
 | Control-plane daemon (queue, heartbeat, CLI + MCP, state) | Built; unit-tested against fakes, not yet hardware-validated |
 
-What remains needs the hardware or the iOS app, not more decompiling: what each `0xB2`
-sequence code does on a real robot, a true pivot-in-place, and the firmware image (behind a
-geo-fenced vendor server). [`docs/protocol-reference.md`](docs/protocol-reference.md) is the
+What remains needs the hardware or the iOS app, not more decompiling: what the `0xB2` music
+codes (49-58) do on a real robot, and the firmware image (behind a geo-fenced vendor server).
+The `0xB2` Move codes (25-38) and a low-speed pivot-in-place have since been read on hardware —
+the Move tab is a dance repertoire, not a walking channel, and the `0xB6` gait turns in place at
+low speed and travels at high speed. [`docs/protocol-reference.md`](docs/protocol-reference.md) is the
 full reference; [`docs/movement-vocabulary.md`](docs/movement-vocabulary.md) maps plain-language
 moves to the byte primitives, with servo-safe timing.
 
