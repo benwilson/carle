@@ -102,9 +102,27 @@ the earlier "and holds" reading. See the [protocol reference](protocol-reference
 - **mode** (byte 0): 1 walks (steps), 2 slides (rolls without stepping).
 - **direction** (byte 2): eight octants, counter-clockwise from RIGHT — 1 right, 2 up-right,
   3 up/forward, 4 up-left, 5 left, 6 down-left, 7 down/back, 8 down-right; 0 = no travel.
-  Direction makes the robot **travel** that heading; it is not a confirmed pivot-in-place.
 - **speed** (byte 1): the app uses 0–100 (and caps there); the byte holds 0–255 and 120
   moved the robot. Higher is faster.
+
+**The gait is turn-then-travel, and it is speed-dependent (confirmed, camera-in-the-loop
+2026-08-12).** A `0xB6` drive first turns the robot toward the commanded heading, then walks it
+along that heading — it does not strafe. How much of each you see depends on speed and duration:
+
+- **Low speed (~50), or a short pulse: the robot turns close to in place** — it rotates with
+  little net travel, reading as a **pivot**. This resolves the long-open "is there a
+  pivot-in-place?" question: yes — a low-speed direction drive is effectively an in-place turn.
+  It also vindicates this byte's first, withdrawn reading (a "turn in place"), which was retracted
+  only because a *fast* run travelled; the two are the same gait at two speeds, not a contradiction.
+- **High speed (~120) with a sustained hold: the turn completes and the robot then travels**
+  across the floor along the heading — the robot walked a visible distance toward the camera on
+  camera. Short high-speed holds still show mostly the turn phase.
+
+Because a low-speed drive turns in place, it is a usable **pivot primitive**: at speed ~50,
+single ~2 s pulses rotate the robot about 90°, and the two senses are opposite — **`direction=3`
+turns one way, `direction=7` the other** (clockwise vs counter-clockwise as the camera sees it).
+Aim with low-speed pivots, then travel with a faster sustained drive: this is how the
+[`carle observe`](observe-loop.md) harness re-centres the robot in frame with no hands.
 
 ## Named moves — the natural-language layer
 
@@ -123,7 +141,7 @@ leg-forward code, say — drops in as one registry entry without touching the en
 | **shoulder shimmy** | `limb=5`, settle, `limb=7`, settle, repeat | inferred |
 | **walk forward** | `mode=1, speed≈50, direction=3`, streamed; stop with `direction=0, speed=0` | confirmed |
 | **glide / slide forward** | `mode=2, speed≈60, direction=3` | confirmed |
-| **turn / spin** | sweep `direction` around while `mode=2` — **uncertain**, tends to travel in an arc rather than pivot | unresolved |
+| **pivot / turn in place** | hold one `direction` at low speed (~50); the robot turns roughly in place — `direction=3` one way, `direction=7` the other, ~90° per ~2 s | **confirmed** |
 | **do a little dance** | trigger `media_music` (`0xB3 03`) or `media_dance` (`0xB3 02`); the robot runs its own music-and-motion routine | confirmed |
 
 ### A note on "wave"
@@ -137,8 +155,9 @@ is the arm sweep, with a note that it is a sweep rather than a hand-wave.
 ## To confirm / open questions
 
 - Right-side mirrors: 7/8 (shoulder) and 11/12 (elbow).
-- A real pivot-in-place — is there any mode/direction combination, or is it simply not
-  exposed on this channel?
+- ~~A real pivot-in-place~~ — **resolved (2026-08-12):** a low-speed direction drive turns the
+  robot roughly in place (see the turn-then-travel note above). It is a turn, not a strafe, and
+  the sense is selectable (`direction=3` vs `direction=7`).
 - Whether two joints can move in one frame (limb **and** waist non-zero) for a compound
   pose, or whether the robot acts on only one joint per frame.
 - How gentle is gentle: the ~0.5 s figure is a safe starting point from the squeal, not a
