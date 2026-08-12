@@ -35,9 +35,12 @@ and speech.
 
 The movement, sequence and media surfaces have now been read on hardware end to end. What remains
 needs the hardware in ways decompiling can't reach, or the iOS app: the firmware image (behind a
-geo-fenced vendor server), and a handful of fine details the setup couldn't measure (individual
-song lengths, for one — the robot sends no playback signal and the room mic was too far to time
-them). [`docs/protocol-reference.md`](docs/protocol-reference.md) is the full reference, and
+geo-fenced vendor server); the **inbound state reads** — battery (`0x2A19`) and the version
+characteristics are decoded from the app, but the battery read comes back empty on the test unit,
+so whether the robot actually exposes those read paths still needs checking on hardware; and a
+handful of fine details the setup couldn't measure (individual song lengths, for one — the robot
+sends no playback signal and the room mic was too far to time them).
+[`docs/protocol-reference.md`](docs/protocol-reference.md) is the full reference, and
 [`docs/movement-vocabulary.md`](docs/movement-vocabulary.md) maps plain-language moves to the byte
 primitives with servo-safe timing.
 
@@ -162,10 +165,13 @@ floor, and plays both the `0xB2` melody snippets and the `0xB3` media library. T
 genuinely beats the idle timer — streaming a frame continuously crowds the idle routine out, which
 is how each expression face and held pose stayed put. One firm lesson: **the heartbeat cannot run
 while audio plays** — a `0xB6` frame cuts `0xB2` melodies and `0xB3` media alike, so the daemon
-must go quiet during sound. Still untested: reconnect-resume after a dropped link, and whether a
-single `0xB6` frame can drive more than one joint at once (compound poses here were built by
-pulsing one joint at a time). On the test unit the standard battery read returns nothing, so
-`status` shows the battery as unknown — the robot announces low battery by voice instead.
+must go quiet during sound. Still untested: reconnect-resume after a dropped link; whether a single `0xB6` frame can drive
+more than one joint at once (compound poses here were built by pulsing one joint at a time); and
+the **inbound state reads**. Battery (standard characteristic `0x2A19`) and the two version
+characteristics are decoded from the app, but on this test unit the battery read returns nothing,
+so `status` shows the battery as unknown — and whether the robot actually exposes those read paths
+is **unverified and needs checking** (`carle info <address>` would enumerate what it really
+advertises). Confirming the battery and version reads work end to end on hardware is open work.
 
 ### macOS: grant Bluetooth permission first
 
