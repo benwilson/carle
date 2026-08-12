@@ -86,6 +86,23 @@ class MediaStep:
 
 
 @dataclass(frozen=True)
+class GestureStep:
+    """Pulse one `0xB2` action code a single time — a fire-and-forget trigger.
+
+    The `0xB2` limb/move codes (1-38) re-run their motion every time the frame arrives, so
+    unlike a face they must be sent ONCE, never held/re-asserted (re-asserting an arm code
+    squeals the servos). The daemon's ongoing heartbeat keeps the idle routine off between
+    gestures; this step just fires the code and lets the queue proceed.
+    """
+
+    code: int
+    step_mode: StepMode = StepMode.SPAWN  # a trigger never blocks the queue
+
+    def build(self) -> bytes:
+        return frame.build(EXPRESSION_FAMILY, [self.code])
+
+
+@dataclass(frozen=True)
 class FaceStep:
     """Set the robot's LED face to one `0xB2` expression code, or clear it.
 
@@ -103,7 +120,7 @@ class FaceStep:
         return frame.build(EXPRESSION_FAMILY, [self.code])
 
 
-Step = MovementStep | PauseStep | SayStep | MediaStep | FaceStep
+Step = MovementStep | PauseStep | SayStep | MediaStep | FaceStep | GestureStep
 
 
 # --- Readable constructors for the primitives macros are built from -----------------
@@ -135,3 +152,8 @@ def travel(
 def face(code: int) -> FaceStep:
     """Hold an LED expression code (39-48), or clear the held face with 0."""
     return FaceStep(code=code)
+
+
+def gesture(code: int) -> GestureStep:
+    """Pulse a `0xB2` limb/move code (1-38) once — fire-and-forget, never held."""
+    return GestureStep(code=code)
