@@ -186,9 +186,7 @@ def test_short_holds_cannot_beat_the_servo_floor():
     # when steps declare 0.1s holds, the emitted limb byte never flips faster than 0.5s.
     async def scenario():
         engine, conn, clock = make_engine()
-        engine.enqueue(
-            [pose(5, hold=0.1), pose(6, hold=0.1), pose(5, hold=0.1), pose(6, hold=0.1)]
-        )
+        engine.enqueue([pose(5, hold=0.1), pose(6, hold=0.1), pose(5, hold=0.1), pose(6, hold=0.1)])
         change_times: list[float] = []
         last_limb = None
         for _ in range(40):
