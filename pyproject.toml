@@ -10,8 +10,13 @@ dependencies = [
     "bleak>=3.0,<4.0",
 ]
 
+[project.optional-dependencies]
+# The MCP server is optional: the daemon and CLI need only the base dependencies.
+mcp = ["mcp>=1.0"]
+
 [project.scripts]
 carle = "carle.cli:main"
+carle-mcp = "carle.daemon.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/benwilson/carle"

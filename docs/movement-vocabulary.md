@@ -86,7 +86,10 @@ Alternating 1 ↔ 2 at the calm cadence = a side-to-side torso sway.
 ## Named moves — the natural-language layer
 
 What a person would say → how to build it, at servo-safe cadence (each step ≥ ~0.5 s, one
-byte changing at a time).
+byte changing at a time). These names are the source for the control-plane daemon's macro
+registry (`src/carle/daemon/moves.py`): each expands to a servo-safe primitive sequence the
+engine streams, so `carle queue wave` runs the row below. A new move — the still-unmapped
+leg-forward code, say — drops in as one registry entry without touching the engine.
 
 | Say | Build | Known |
 |---|---|---|

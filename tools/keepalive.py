@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Keep the Ruko 1088 awake — hold the BLE link and stream a NOOP so it never idles.
+"""DEPRECATED — superseded by the control-plane daemon (`carle daemon start`).
+
+The daemon (`src/carle/daemon/`) now holds the link and heartbeats the no-op, and does
+far more besides. This script is kept, not deleted, as the single-purpose experiment for
+the first charged-robot session that validates the daemon's heartbeat against the idle
+timer; once that live pass succeeds, this file goes.
+
+Keep the Ruko 1088 awake — hold the BLE link and stream a NOOP so it never idles.
 
 Left alone, the robot resumes its own idle routine (music, movement, speech) within a
 second or two of silence. This holds one connection open and streams a no-op movement

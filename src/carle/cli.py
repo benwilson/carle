@@ -106,6 +106,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     confirm.add_argument("--table", type=Path, default=None, help=argparse.SUPPRESS)
 
+    daemon = sub.add_parser("daemon", help="the always-on control plane that holds the link")
+    daemon_sub = daemon.add_subparsers(dest="daemon_command", required=True)
+    d_start = daemon_sub.add_parser("start", help="hold the link and run the command queue")
+    d_start.add_argument("address", help="peripheral address from `carle scan`")
+    d_start.add_argument(
+        "--foreground", action="store_true", help="run in this terminal instead of backgrounding"
+    )
+    d_start.add_argument(
+        "--interval", type=float, default=1.0, help="heartbeat silence floor in seconds"
+    )
+    daemon_sub.add_parser("stop", help="shut the daemon down")
+    daemon_sub.add_parser("status", help="print the daemon's state")
+
+    queue = sub.add_parser("queue", help="enqueue moves or steps on the running daemon")
+    queue.add_argument(
+        "items",
+        nargs="+",
+        metavar="MOVE|kind:value",
+        help="a move name (wave) or a primitive (pose:5, waist:1, pause:1.0, say:hello)",
+    )
+    sub.add_parser("clear", help="drop the daemon's pending queue")
+    sub.add_parser("stop", help="abort now and return the robot to neutral")
+    sub.add_parser("status", help="print the robot's state via the daemon")
+
     return parser
 
 
@@ -413,12 +437,154 @@ def _run_confirm(args: argparse.Namespace) -> int:
     return 0
 
 
+def _tokens_to_items(tokens: list[str]) -> list[dict]:
+    """Turn CLI queue tokens into protocol step items.
+
+    A bare token is a named move (`wave`); a `kind:value` token is a primitive.
+    """
+    items: list[dict] = []
+    for token in tokens:
+        if ":" not in token:
+            items.append({"move": token})
+            continue
+        kind, _, value = token.partition(":")
+        if kind in ("pose", "waist"):
+            items.append({kind: int(value)})
+        elif kind == "pause":
+            items.append({"pause": float(value)})
+        elif kind == "say":
+            items.append({"say": value})
+        else:
+            raise ValueError(f"unknown step kind {kind!r} in {token!r}")
+    return items
+
+
+def _print_reply(reply: dict) -> int:
+    """Print a daemon reply and return an exit code from its `ok` field."""
+    if not reply.get("ok", False):
+        print(f"error: {reply.get('error', 'the daemon refused the request')}", file=sys.stderr)
+        return 1
+    if "status" in reply:
+        s = reply["status"]
+        battery = "unknown" if s.get("battery") is None else f"{s['battery']}%"
+        connected = "connected" if s.get("connected") else "disconnected"
+        print(
+            f"{connected}; battery {battery}; doing {s.get('current') or 'nothing'}; "
+            f"{s.get('pending', 0)} queued, {s.get('spawns', 0)} spawned"
+        )
+    elif "moves" in reply:
+        print(", ".join(reply["moves"]))
+    elif "enqueued" in reply:
+        print(f"enqueued {reply['enqueued']} step(s)")
+    else:
+        print("ok")
+    return 0
+
+
+def _run_daemon(args: argparse.Namespace, requester) -> int:
+    from carle.daemon.client import NoDaemonError
+    from carle.daemon.server import UNIX_SOCKETS
+
+    if args.daemon_command == "start":
+        if not UNIX_SOCKETS:
+            print(
+                "error: the carle daemon requires Unix domain sockets and is POSIX-only",
+                file=sys.stderr,
+            )
+            return 1
+        if args.foreground:
+            from carle.daemon.server import DaemonServer, DaemonUnsupported
+
+            try:
+                asyncio.run(DaemonServer(args.address, silence_floor=args.interval).serve())
+            except KeyboardInterrupt:
+                pass
+            except DaemonUnsupported as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+            return 0
+        import subprocess
+
+        subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+            [
+                sys.executable,
+                "-m",
+                "carle.cli",
+                "daemon",
+                "start",
+                args.address,
+                "--foreground",
+                "--interval",
+                str(args.interval),
+            ],
+            start_new_session=True,
+        )
+        print(f"daemon started for {args.address}")
+        return 0
+    op = "shutdown" if args.daemon_command == "stop" else "status"
+    try:
+        return _print_reply(requester({"op": op}))
+    except NoDaemonError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+def _run_client_op(op_or_items, requester) -> int:
+    """Run a queue/clear/stop/status request, reporting a missing daemon cleanly."""
+    from carle.daemon.client import NoDaemonError
+
+    request = (
+        op_or_items if isinstance(op_or_items, dict) else {"op": "enqueue", "items": op_or_items}
+    )
+    try:
+        return _print_reply(requester(request))
+    except NoDaemonError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+def _daemon_guard(daemon_live) -> int | None:
+    """Refuse a per-call BLE verb while the daemon holds the link (KTD10)."""
+    if daemon_live():
+        print(
+            "error: daemon holds the link — use `carle queue` or stop the daemon",
+            file=sys.stderr,
+        )
+        return 1
+    return None
+
+
 def main(
     argv: list[str] | None = None,
     backend: Backend | None = None,
     authorization: str | None = "auto",
+    requester=None,
+    daemon_live=None,
 ) -> int:
     args = build_parser().parse_args(argv)
+
+    if requester is None or daemon_live is None:
+        from carle.daemon import client
+
+        requester = requester or client.request
+        daemon_live = daemon_live or client.daemon_live
+
+    # Daemon lifecycle and the queue-control verbs speak to the socket, never the radio.
+    if args.command == "daemon":
+        return _run_daemon(args, requester)
+    if args.command == "queue":
+        try:
+            items = _tokens_to_items(args.items)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        return _run_client_op(items, requester)
+    if args.command == "clear":
+        return _run_client_op({"op": "clear"}, requester)
+    if args.command == "stop":
+        return _run_client_op({"op": "stop"}, requester)
+    if args.command == "status":
+        return _run_client_op({"op": "status"}, requester)
 
     # A dry run and a confirm never reach CoreBluetooth, so the authorization guard
     # must not block them — on a machine with Bluetooth denied it otherwise fails a
@@ -426,6 +592,11 @@ def main(
     needs_bluetooth = args.command in BLUETOOTH_COMMANDS or (
         args.command == "send" and not args.dry_run
     )
+
+    # The daemon is the sole link-holder: a per-call BLE verb must refuse while it runs,
+    # or two writers would contend for the connection (KTD10, R17).
+    if needs_bluetooth and _daemon_guard(daemon_live) is not None:
+        return 1
 
     if authorization == "auto":
         # Only the real backend touches CoreBluetooth, so only it can be SIGABRT'd.
