@@ -215,6 +215,31 @@ This frame is **not** in the command table below: the table models fixed payload
 parameters, and a variable-length code list does not fit that shape without a schema change. It
 is recorded here instead.
 
+### Hand/arm codes (1-24), on hardware
+
+The two "hand" tabs were driven on a real robot on 2026-08-12, one code at a time, with the
+control-plane daemon holding the link and streaming its heartbeat so the body's idle motion
+stayed suppressed while each code was watched. These codes are **animated arm gestures**: a code
+plays a short motion and the arm settles into a pose, reaching the same joints the `0xB6` limb
+selector drives but as pre-canned animations rather than direct joint targets. Codes 1-12 drive
+the **left** arm; 13-24 mirror them on the **right** (code 13, the right-arm raise, was watched
+directly; the rest are read as the mirror). Each odd/even icon pair reaches roughly one position:
+
+| Left codes | Right codes | Frame (left odd) | Arm motion |
+|---|---|---|---|
+| 1, 2 | 13, 14 | `B2 01 01 01 AA` | shoulder raises the arm forward/up |
+| 3, 4 | 15, 16 | `B2 01 03 03 AA` | arm lowers to rest |
+| 5, 6 | 17, 18 | `B2 01 05 05 AA` | shoulder raises the arm out to the side (lateral) |
+| 7, 8 | 19, 20 | `B2 01 07 07 AA` | a rest position (hard to tell from 3/4 by eye) |
+| 9, 10 | 21, 22 | `B2 01 09 09 AA` | elbow bends the forearm up |
+| 11, 12 | 23, 24 | `B2 01 0B 0B AA` | elbow lowers the forearm back down |
+
+One operational note, recorded here because it cost a servo squeal to learn: these `0xB2` gesture
+codes **re-run their motion on every frame**, so they must be pulsed once, never streamed — the
+opposite of a `0xB6` pose, which is held safely by re-streaming the same frame. Relatedly, a
+`0xB6` all-zero NOOP streamed on the link holds the body's idle motion off but does **not** freeze
+the LED face, which cycles on its own; freezing the face needs the face frame streamed.
+
 ### Expression codes (39-48), on hardware
 
 The Expression tab's ten codes were driven on a real robot on 2026-08-12. Each was held on the
@@ -259,8 +284,9 @@ on release streams frames with the direction and speed bytes zeroed. So movement
 sending a zero-motion frame, not by a dedicated command. Nothing the app sends interrupts the
 idle routine or stops media playback once started; those have no off switch on this channel.
 
-**Not yet documented.** What the `0xB2` limb/move codes (1-38) and music codes (49-58) do on
-hardware — only the expression codes (39-48) above have been read on hardware. And any way to *halt* the idle
+**Not yet documented.** What the `0xB2` move codes (25-38) and music codes (49-58) do on
+hardware — the hand/arm codes (1-24) and expression codes (39-48) above have been read on
+hardware, the rest not yet. And any way to *halt* the idle
 routine or media playback — the app has none, though the 2.4 GHz remote carries an unexamined
 centre key that may. Note that streaming frames continuously does *crowd out* the idle routine
 (the expression faces above were held that way), but that is denying it a silence window, not an
