@@ -250,6 +250,14 @@ Relatedly, a `0xB6` all-zero NOOP streamed on the link holds the body's idle mot
 **not** freeze the LED face, which cycles on its own; freezing the face needs the face frame
 streamed.
 
+**Autonomous re-derivation (2026-08-12).** All 24 hand/arm codes above were later re-derived from
+scratch by the camera-in-the-loop `carle observe` harness ([observe-loop.md](observe-loop.md)):
+each was driven through the daemon, watched through a webcam, and read from the sampled frames
+with no human judging any frame. Every reading matched the hand-read mapping in this table, so no
+entry changed. The `0xB6` limb poses (1-12) were re-derived the same way and matched their
+documented behaviour too — the arm map is the first slice of the reference the machine has
+re-derived and agreed with end to end.
+
 ### Expression codes (39-48), on hardware
 
 The Expression tab's ten codes were driven on a real robot on 2026-08-12. Each was held on the
