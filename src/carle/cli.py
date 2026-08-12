@@ -130,6 +130,20 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("stop", help="abort now and return the robot to neutral")
     sub.add_parser("status", help="print the robot's state via the daemon")
 
+    observe = sub.add_parser(
+        "observe", help="autonomously derive what each arm code does via the webcam"
+    )
+    observe.add_argument(
+        "--codes",
+        help="comma-separated family:code list to derive (default: the full arm set)",
+    )
+    observe.add_argument("--device", default="0", help="camera device index (default: 0)")
+    observe.add_argument("--repeats", type=int, default=2, help="agreeing readings to confirm")
+    observe.add_argument("--retries", type=int, default=2, help="extra retry attempts per code")
+    observe.add_argument(
+        "--dry-run", action="store_true", help="list the code set and loop, touch no hardware"
+    )
+
     return parser
 
 
@@ -561,12 +575,93 @@ def _daemon_guard(daemon_live) -> int | None:
     return None
 
 
+def _default_observe_codes() -> list[tuple[str, int]]:
+    """The arm-reaching set: 0xB6 limb poses 1-12 and 0xB2 hand gestures 1-24."""
+    return [("pose", n) for n in range(1, 13)] + [("gesture", n) for n in range(1, 25)]
+
+
+def _parse_observe_codes(spec: str) -> list[tuple[str, int]]:
+    codes: list[tuple[str, int]] = []
+    for token in spec.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        family, _, value = token.partition(":")
+        if not value:
+            raise ValueError(f"code {token!r} is not family:number")
+        codes.append((family, int(value)))
+    return codes
+
+
+def _run_observe(args, requester, daemon_live, derive, record) -> int:
+    """Drive the observe loop over the arm code set; stop cleanly if the robot is unreachable."""
+    from carle.daemon.client import NoDaemonError
+    from carle.observe.capture import CaptureError
+    from carle.observe.driver import DriverError
+
+    try:
+        codes = _parse_observe_codes(args.codes) if args.codes else _default_observe_codes()
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.dry_run:
+        print(f"observe plan: {len(codes)} codes (repeats={args.repeats}, retries={args.retries})")
+        for family, code in codes:
+            print(f"  {family}:{code}")
+        return 0
+
+    if not daemon_live():
+        print(
+            "error: no daemon is holding the link — start it with `carle daemon start <address>`",
+            file=sys.stderr,
+        )
+        return 1
+
+    # R11: a live socket but a disconnected or dead robot must halt, not "drive" a robot that
+    # cannot move and record garbage. The daemon's status reports connection and battery.
+    try:
+        status = requester({"op": "status"}).get("status", {})
+    except NoDaemonError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if not status.get("connected", False):
+        print(
+            "error: robot is not connected (dropped link or dead battery) — stopping",
+            file=sys.stderr,
+        )
+        return 1
+
+    # The full judge-in-loop derivation is agent-driven (KTD1): a real run supplies the derive
+    # and record seams that carry the agent's vision judgment and reference edit.
+    if derive is None or record is None:
+        print(
+            "error: observe needs an agent-supplied judge — run under the orchestrating agent, "
+            "or use --dry-run to see the plan",
+            file=sys.stderr,
+        )
+        return 1
+
+    done = 0
+    for family, code in codes:
+        try:
+            record(derive(family, code))
+        except (CaptureError, DriverError) as exc:
+            print(f"error: stopped after {done} codes: {exc}", file=sys.stderr)
+            return 1
+        done += 1
+    print(f"observed {done} codes")
+    return 0
+
+
 def main(
     argv: list[str] | None = None,
     backend: Backend | None = None,
     authorization: str | None = "auto",
     requester=None,
     daemon_live=None,
+    observe_derive=None,
+    observe_record=None,
 ) -> int:
     args = build_parser().parse_args(argv)
 
@@ -592,6 +687,8 @@ def main(
         return _run_client_op({"op": "stop"}, requester)
     if args.command == "status":
         return _run_client_op({"op": "status"}, requester)
+    if args.command == "observe":
+        return _run_observe(args, requester, daemon_live, observe_derive, observe_record)
 
     # A dry run and a confirm never reach CoreBluetooth, so the authorization guard
     # must not block them — on a machine with Bluetooth denied it otherwise fails a
