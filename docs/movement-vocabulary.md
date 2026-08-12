@@ -22,6 +22,15 @@ Every movement rides on the `0xB6` frame — payload `[mode, speed, direction, w
 - **The robot drifts on its own** — see the reference's Autonomous behaviour note. Attribute
   only what happens within a second of a frame.
 
+**Two families reach the arms.** The `0xB6` frame documented here drives joints directly, and a
+pose *holds* — which is what this document is about. The `0xB2` programmed-sequence "hand" codes
+(1-24) also move the arms, but as pre-canned *animations* that play once and do not hold; they
+were mapped on hardware in the [protocol reference](protocol-reference.md#handarm-codes-1-24-on-hardware).
+Rule of thumb, mirrored in the daemon's verbs: for a **held** pose use `0xB6` (`carle queue
+pose:N`); for a **canned gesture** use `0xB2` (`carle queue gesture:N`). Because each `0xB6` limb
+holds independently, pulsing several poses in turn builds a held multi-joint pose — left shoulder
+out (`pose:5`) then right shoulder out (`pose:7`) leaves both arms held out at once.
+
 ## Servo-safe timing — the rules that matter most
 
 The joints are small geared servos in a toy, not fast actuators. Driving them wrong makes
