@@ -85,10 +85,17 @@ the two as separate joints. See the [protocol reference](protocol-reference.md).
 
 | Value | What it looks like | Known |
 |---|---|---|
-| 1 | leans/bends left at the waist and holds | observed once |
+| 1 | leans/bends left at the waist **while driven** — spring-return, not a hold | **confirmed** |
 | 2 | returns upright | observed once |
 
 Alternating 1 ↔ 2 at the calm cadence = a side-to-side torso sway.
+
+**The waist is spring-return, unlike the arm limbs.** A limb holds its pose once its register
+clears; the waist snaps back to upright the moment the command clears, so it stays leaned only
+while actively driven and sways when driven continuously. It therefore **can't be part of a held
+compound pose** — a lean pulsed alongside raised arms leaves the arms out but the torso upright.
+Held body poses are arms-only (the 3-DOF arms); the waist is for transient sway. This corrects
+the earlier "and holds" reading. See the [protocol reference](protocol-reference.md).
 
 ### Locomotion (mode, direction, speed)
 
