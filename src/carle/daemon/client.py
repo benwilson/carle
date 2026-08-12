@@ -12,7 +12,7 @@ import contextlib
 from pathlib import Path
 
 from carle.daemon import protocol
-from carle.daemon.server import DEFAULT_SOCKET_PATH, is_daemon_live
+from carle.daemon.server import DEFAULT_SOCKET_PATH, UNIX_SOCKETS, is_daemon_live
 
 
 class NoDaemonError(Exception):
@@ -21,6 +21,9 @@ class NoDaemonError(Exception):
 
 def request(req: dict, socket_path: Path | str = DEFAULT_SOCKET_PATH) -> dict:
     """Send one request to the daemon and return its response."""
+    if not UNIX_SOCKETS:
+        # POSIX-only subsystem: no daemon can exist here, so report it like a missing one.
+        raise NoDaemonError("the carle daemon requires Unix domain sockets and is POSIX-only")
 
     async def go() -> dict:
         try:

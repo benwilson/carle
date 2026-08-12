@@ -17,6 +17,14 @@ import pytest
 from carle.daemon.protocol import dumps, loads
 from carle.daemon.server import DaemonAlreadyRunning, DaemonServer, is_daemon_live
 
+# The daemon is POSIX-only (Unix domain sockets, os.kill liveness); these tests bind real
+# sockets, so they cannot run on a platform without them. The graceful degradation of the
+# subsystem on such platforms is covered by test_daemon_cli.
+pytestmark = pytest.mark.skipif(
+    not hasattr(asyncio, "start_unix_server"),
+    reason="daemon control socket requires Unix domain sockets (POSIX only)",
+)
+
 
 class FakeConn:
     def __init__(self) -> None:

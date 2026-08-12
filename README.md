@@ -113,6 +113,11 @@ running — stop the daemon, or drive through `carle queue`. The daemon supersed
 `tools/keepalive.py`, which is kept, marked deprecated, only as the single-purpose experiment
 for the first live-robot heartbeat validation.
 
+The daemon's control channel is a Unix domain socket, so **the daemon is POSIX-only** (macOS
+and Linux). On Windows the single-shot verbs (`carle send`, `scan`, `info`) still work;
+`carle daemon start` and the queue verbs report that the daemon needs Unix sockets rather than
+crashing.
+
 **Speech.** The robot also exposes a separate Bluetooth audio sink, `JT_Speaker`. Paired and
 selected as the host's system audio output, it plays any host audio — so a `say:` step (macOS
 `say`) speaks through the robot. The daemon does not pair or route audio; that is host setup.

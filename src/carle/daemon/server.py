@@ -30,13 +30,25 @@ TICK_INTERVAL = 0.1
 DEFAULT_SOCKET_PATH = Path(".carle/daemon.sock")
 DEFAULT_LOCK_PATH = Path(".carle/daemon.lock")
 
+#: The daemon rests on Unix domain sockets (its control channel) and `os.kill(pid, 0)`
+#: liveness — both POSIX-only. On a platform without Unix sockets the whole subsystem is
+#: unavailable, and every entry point degrades to "no daemon" instead of crashing an
+#: ordinary CLI command that only happens to check for one.
+UNIX_SOCKETS = hasattr(asyncio, "start_unix_server")
+
 
 class DaemonAlreadyRunning(Exception):
     """Raised when a live daemon already holds the socket."""
 
 
+class DaemonUnsupported(Exception):
+    """Raised when the daemon is started on a platform without Unix domain sockets."""
+
+
 async def is_daemon_live(socket_path: Path | str) -> bool:
     """True when something is accepting connections on `socket_path`."""
+    if not UNIX_SOCKETS:
+        return False  # no Unix sockets -> no daemon can be running here
     try:
         _reader, writer = await asyncio.open_unix_connection(str(socket_path))
     except (ConnectionRefusedError, FileNotFoundError, OSError):
@@ -183,6 +195,10 @@ class DaemonServer:
 
     async def serve(self) -> None:
         """Run the daemon until a `shutdown` request arrives."""
+        if not UNIX_SOCKETS:
+            raise DaemonUnsupported(
+                "the carle daemon requires Unix domain sockets and is POSIX-only"
+            )
         # Acquire outside the try: on DaemonAlreadyRunning we do NOT own the lock and must
         # not run the cleanup that would delete the live holder's lock and socket.
         self._acquire()

@@ -98,3 +98,12 @@ def test_dry_run_send_is_not_blocked_by_the_daemon(capsys):
     code = main(["send", "media_music", "--dry-run"], authorization=None, daemon_live=lambda: True)
     assert code == 0
     assert "B3 02 03 00 03 AA" in capsys.readouterr().out
+
+
+def test_daemon_start_refuses_cleanly_without_unix_sockets(capsys, monkeypatch):
+    # On a platform without Unix domain sockets the daemon cannot run; starting it must
+    # print a clear POSIX-only error and exit 1, never crash with an AttributeError.
+    monkeypatch.setattr("carle.daemon.server.UNIX_SOCKETS", False)
+    code = main(["daemon", "start", "AA:BB"], requester=no_daemon, daemon_live=lambda: False)
+    assert code == 1
+    assert "POSIX-only" in capsys.readouterr().err

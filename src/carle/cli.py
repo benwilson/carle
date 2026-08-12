@@ -483,15 +483,25 @@ def _print_reply(reply: dict) -> int:
 
 def _run_daemon(args: argparse.Namespace, requester) -> int:
     from carle.daemon.client import NoDaemonError
+    from carle.daemon.server import UNIX_SOCKETS
 
     if args.daemon_command == "start":
+        if not UNIX_SOCKETS:
+            print(
+                "error: the carle daemon requires Unix domain sockets and is POSIX-only",
+                file=sys.stderr,
+            )
+            return 1
         if args.foreground:
-            from carle.daemon.server import DaemonServer
+            from carle.daemon.server import DaemonServer, DaemonUnsupported
 
             try:
                 asyncio.run(DaemonServer(args.address, silence_floor=args.interval).serve())
             except KeyboardInterrupt:
                 pass
+            except DaemonUnsupported as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
             return 0
         import subprocess
 
