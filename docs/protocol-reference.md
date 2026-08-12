@@ -174,6 +174,16 @@ addressable articulations to seven — six in the arms, one at the waist. Ruko p
 motor drives; the remaining two are presumably in the legs, which the direction and speed
 bytes drive together rather than individually.
 
+**The waist does not hold like the limbs (2026-08-12).** The camera-in-the-loop pose probe
+corrects the first-session "the lean holds" reading: the waist is **spring-return**. A limb
+stays put once its register clears (limb=0), but the torso returns to upright the moment the
+waist command clears (waist=0) — so a single pulse, followed by the daemon's all-zero
+heartbeat, leans then rocks back. It stays leaned only while *actively* driven, and driving it
+continuously makes it sway rather than hold (see the gyro/streaming note). The practical
+consequence: the waist **cannot contribute a static lean to a held compound pose** — pulsing a
+lean alongside held arm poses leaves the arms out but the torso upright, reproduced. Held body
+poses are arms-only; the waist is for transient sway, not posture.
+
 Byte 5 produced no effect under four separate methods: a sweep across small, mid and maximum
 values, sustained bursts of a single value, alternation between the extremes, and a full
 minute held down with the idle routine suppressed throughout. That is not proof the byte is
