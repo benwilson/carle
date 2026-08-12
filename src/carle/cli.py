@@ -124,7 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
         "items",
         nargs="+",
         metavar="MOVE|kind:value",
-        help="a move name (wave) or a primitive (pose:5, waist:1, pause:1.0, say:hello)",
+        help="a move name (wave) or a primitive (pose:5, waist:1, face:39, pause:1.0, say:hello)",
     )
     sub.add_parser("clear", help="drop the daemon's pending queue")
     sub.add_parser("stop", help="abort now and return the robot to neutral")
@@ -450,6 +450,10 @@ def _tokens_to_items(tokens: list[str]) -> list[dict]:
         kind, _, value = token.partition(":")
         if kind in ("pose", "waist"):
             items.append({kind: int(value)})
+        elif kind == "face":
+            # face:39 holds an LED expression; face:clear (or face:off/0) drops the hold.
+            code = 0 if value in ("clear", "off") else int(value)
+            items.append({"face": code})
         elif kind == "pause":
             items.append({"pause": float(value)})
         elif kind == "say":
@@ -468,8 +472,9 @@ def _print_reply(reply: dict) -> int:
         s = reply["status"]
         battery = "unknown" if s.get("battery") is None else f"{s['battery']}%"
         connected = "connected" if s.get("connected") else "disconnected"
+        face = f"; face {s['face']}" if s.get("face") is not None else ""
         print(
-            f"{connected}; battery {battery}; doing {s.get('current') or 'nothing'}; "
+            f"{connected}; battery {battery}; doing {s.get('current') or 'nothing'}{face}; "
             f"{s.get('pending', 0)} queued, {s.get('spawns', 0)} spawned"
         )
     elif "moves" in reply:

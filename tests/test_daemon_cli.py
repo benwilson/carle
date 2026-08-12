@@ -39,6 +39,13 @@ def test_queue_parses_primitive_tokens(capsys):
     assert fr.requests[0]["items"] == [{"pose": 5}, {"pause": 1.0}, {"say": "hello"}]
 
 
+def test_queue_parses_face_tokens(capsys):
+    fr = FakeRequester({"ok": True, "enqueued": 2})
+    main(["queue", "face:39", "face:clear"], requester=fr, daemon_live=lambda: False)
+    # face:N holds an LED expression; face:clear drops the hold (code 0).
+    assert fr.requests[0]["items"] == [{"face": 39}, {"face": 0}]
+
+
 def test_queue_rejects_an_unknown_step_kind(capsys):
     fr = FakeRequester({"ok": True})
     code = main(["queue", "spin:9"], requester=fr, daemon_live=lambda: False)

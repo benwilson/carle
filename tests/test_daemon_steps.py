@@ -8,10 +8,12 @@ from carle import frame
 from carle.daemon import moves
 from carle.daemon.steps import (
     SAFE_HOLD,
+    FaceStep,
     MediaStep,
     MovementStep,
     SayStep,
     StepMode,
+    face,
     pose,
     waist,
 )
@@ -67,3 +69,18 @@ def test_say_and_media_carry_their_step_mode():
     assert SayStep(text="hi").step_mode is StepMode.SPAWN
     assert SayStep(text="hi", step_mode=StepMode.AWAIT).step_mode is StepMode.AWAIT
     assert MediaStep(sub=3).step_mode is StepMode.SPAWN
+
+
+def test_face_step_builds_the_expected_0xb2_frame():
+    # An LED expression is one 0xB2 action code (39-48 are the five faces).
+    assert FaceStep(code=39).build() == frame.build(0xB2, [39])
+    assert face(47).build() == frame.build(0xB2, [47])
+    assert face(39).step_mode is StepMode.SPAWN  # setting the face never blocks the queue
+
+
+def test_protocol_parses_a_face_item():
+    from carle.daemon.protocol import parse_steps
+
+    steps = parse_steps([{"face": 39}, {"face": 0}])
+    assert [type(s) for s in steps] == [FaceStep, FaceStep]
+    assert [s.code for s in steps] == [39, 0]

@@ -31,6 +31,7 @@ from carle import frame
 from carle.daemon.connection import DaemonConnectionError
 from carle.daemon.steps import (
     SAFE_HOLD,
+    FaceStep,
     MediaStep,
     MovementStep,
     PauseStep,
@@ -104,6 +105,13 @@ class Engine:
         self._spawn_say: list[object] = []
         self._last_sent: bytes | None = None
         self._last_write: float | None = None
+        #: The held LED expression: the code the robot's face should show, and the frame
+        #: that sets it. Held display state (not a one-shot) — re-asserted on the heartbeat
+        #: cadence so the idle routine cannot repaint the face between frames. None = no
+        #: hold, so the idle face resumes.
+        self._face_code: int | None = None
+        self._face_frame: bytes | None = None
+        self._last_face_sent: bytes | None = None
         #: When each joint byte last changed in the emitted stream — the KTD4 rate-limit's
         #: memory, so a joint can never flip faster than the servo-safe minimum regardless
         #: of which track wrote it or how short a step's declared hold is.
@@ -128,6 +136,10 @@ class Engine:
         self._spawn_movement.clear()
         self._current = None
         self._current_say = None
+        # A held face is part of "what the robot is doing", so an abort clears it too and
+        # lets the idle face resume; the next heartbeat is a NOOP rather than the face.
+        self._face_code = None
+        self._face_frame = None
         # Replace the queue with a neutral-return sequence for whatever joints are raised.
         self._pending = deque(self._neutral_return())
 
@@ -138,6 +150,7 @@ class Engine:
             "current": current,
             "pending": len(self._pending),
             "spawns": len(self._spawn_movement) + len(self._spawn_say),
+            "face": self._face_code,
         }
 
     async def battery(self) -> int | None:
@@ -202,6 +215,12 @@ class Engine:
             if isinstance(step, MediaStep):
                 media_frames.append(step.build())
                 continue  # media is a fire-and-forget trigger; the queue proceeds
+            if isinstance(step, FaceStep):
+                # Setting the face is instantaneous held state: record it and let the
+                # queue proceed. code 0 clears the hold so the idle face resumes.
+                self._face_code = step.code or None
+                self._face_frame = step.build() if step.code else None
+                continue
             if isinstance(step, SayStep):
                 handle = self._tts(step.text)
                 if handle is None:
@@ -269,10 +288,17 @@ class Engine:
                 self._last_sent = target_frame
                 self._last_write = now
             return
-        if self._last_write is None or now - self._last_write >= self._silence_floor:
-            # Heartbeat: keep the link warm without disturbing the held target.
-            if await self._send(NOOP, is_target=False):
+        # Heartbeat. When a face is held, the heartbeat frame IS that face, so re-asserting
+        # it on the silence floor both keeps the link warm and denies the idle routine its
+        # window to repaint the LED face. A newly-set (or changed) face is asserted at once,
+        # not on the next floor tick, so `carle queue face:39` shows immediately.
+        heartbeat = self._face_frame if self._face_frame is not None else NOOP
+        face_changed = self._face_frame is not None and self._face_frame != self._last_face_sent
+        floor_passed = self._last_write is None or now - self._last_write >= self._silence_floor
+        if face_changed or floor_passed:
+            if await self._send(heartbeat, is_target=False):
                 self._last_write = now
+                self._last_face_sent = self._face_frame
 
     async def _send(self, payload: bytes, *, is_target: bool) -> bool:
         """Send one frame. On a dropped link, apply the per-type resume policy (KTD6)."""
