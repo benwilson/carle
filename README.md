@@ -28,7 +28,8 @@ through its own speaker.
 | Audio channel (`JT_Speaker`) | Verified — plays arbitrary host audio |
 | Firmware update (OTA/DFU) and chip | Documented from the app (Realtek `RTL8763B`) |
 | CLI scan / connect / info / send / confirm | Working |
-| Driving the robot (movement, media, audio, keep-alive) | Working |
+| Driving the robot (movement, media, audio) | Working |
+| Control-plane daemon (queue, heartbeat, CLI + MCP, state) | Built; unit-tested against fakes, not yet hardware-validated |
 
 What remains needs the hardware or the iOS app, not more decompiling: what each `0xB2`
 sequence code does on a real robot, a true pivot-in-place, and the firmware image (behind a
@@ -87,23 +88,39 @@ does not.
 
 ### Driving the robot
 
-Beyond single commands, the robot can be driven continuously over a held connection — that is
-what makes it wave or dance rather than twitch once. Movement is composed from byte primitives;
-[`docs/movement-vocabulary.md`](docs/movement-vocabulary.md) maps plain-language moves ("wave",
-"fist pump", "sway") to those primitives, and states the servo-safe timing the little geared
-joints need — driven too fast, they squeal and strain.
-
-Left alone, the robot resumes its own idle routine within a second or two. To keep it still and
-under the control plane's authority, [`tools/keepalive.py`](tools/keepalive.py) holds the link
-and streams a no-op movement frame just often enough to deny the idle routine its window:
+Beyond single commands, an always-on **control-plane daemon** holds the link and runs a timed
+command queue — that is what makes the robot wave or dance rather than twitch once. Left alone,
+the robot resumes its own idle routine within a second or two; the daemon heartbeats a no-op
+frame just often enough to deny that routine its window, and stays the sole holder of the link.
 
 ```bash
-uv run python tools/keepalive.py <address>
+uv run carle daemon start <address>      # hold the link and run the queue
+uv run carle queue wave                  # enqueue a named move (or pose:5, pause:1.0, say:hello)
+uv run carle status                      # connection, battery, current step, queue depth
+uv run carle clear                       # drop pending steps
+uv run carle stop                        # abort now and return the robot to neutral
+uv run carle daemon stop                 # shut the daemon down
 ```
 
-The robot also exposes a separate Bluetooth audio sink, `JT_Speaker`. Paired as a normal system
-output it plays any host audio — so, on macOS, `say "hello"` speaks through the robot. The
-control link and the audio sink are independent surfaces that can be used together.
+Moves are composed from byte primitives; [`docs/movement-vocabulary.md`](docs/movement-vocabulary.md)
+maps plain-language moves ("wave", "fist pump", "sway") to those primitives and states the
+servo-safe timing the little geared joints need — driven too fast, they squeal and strain. The
+daemon exposes the same queue to AI agents through an MCP server (`carle-mcp`, installed with
+`pip install 'carle[mcp]'`).
+
+Because the daemon is the sole link-holder, `carle send/connect/info` refuse while it is
+running — stop the daemon, or drive through `carle queue`. The daemon supersedes the earlier
+`tools/keepalive.py`, which is kept, marked deprecated, only as the single-purpose experiment
+for the first live-robot heartbeat validation.
+
+**Speech.** The robot also exposes a separate Bluetooth audio sink, `JT_Speaker`. Paired and
+selected as the host's system audio output, it plays any host audio — so a `say:` step (macOS
+`say`) speaks through the robot. The daemon does not pair or route audio; that is host setup.
+
+**Not yet hardware-validated.** The daemon is built and unit-tested against fakes, but nothing
+in it has run against a charged robot. The heartbeat interval beating the idle timer, the
+servo-safe cadence, the neutral-return, reconnect resume, whether the robot acts on a compound
+multi-joint frame, and whether audio and motion run together all await a live session.
 
 ### macOS: grant Bluetooth permission first
 
