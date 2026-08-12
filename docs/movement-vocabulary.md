@@ -74,6 +74,13 @@ Left arm then right, odd raises / even returns.
 | 9 / 10 | left elbow | forearm bends up/down at the elbow; with the arm already raised it bobs the fist | **confirmed** |
 | 11 / 12 | right elbow | mirror of 9/10 on the right | inferred |
 
+**The forward and lateral shoulder codes compose.** `1/2` (arm forward) and `5/6` (arm lateral)
+are two independent axes of the *same* left shoulder, not either/or: hold both and the arm sits
+at a diagonal, up-and-out, higher and wider than lateral alone — so a "Y" pose is reachable, and
+each shoulder has two degrees of freedom plus the elbow. Same on the right with `3/4` + `7/8`.
+This came from the camera-in-the-loop pose experiment and corrects the earlier read that treated
+the two as separate joints. See the [protocol reference](protocol-reference.md).
+
 ### Waist byte (payload byte 3)
 
 | Value | What it looks like | Known |

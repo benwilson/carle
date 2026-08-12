@@ -141,6 +141,17 @@ runs them in order, which is also the only practical way to watch one — the ro
 routine resumes within a second or two and moves the same joints. Back-to-back sends deny that
 routine its window, which is how the negative result on byte 5 below was obtained.
 
+**The two shoulder axes compose (2026-08-12).** The forward-raise pair (1/2, 3/4) and the
+lateral-raise pair (5/6, 7/8) are not one shoulder doing two motions but **two independent axes
+of the same shoulder**: driving a forward raise and a lateral raise on the *same* arm holds it
+at a diagonal, up-and-out — a position neither axis reaches alone. So each shoulder carries two
+degrees of freedom (forward flexion and lateral abduction) plus its elbow, and an arm's
+reachable poses are the *product* of the two axes, not a choice between them. This corrects the
+earlier reading, which listed the two motions separately without noting they hold together. It
+came out of the camera-in-the-loop pose experiment: a "Y" driving both axes on both arms landed
+higher and wider than a lateral-only "T", and on the left arm the diagonal held apart from both
+forward-only and lateral-only across independent captures.
+
 Eleven of the twelve values were watched directly. Value 2 was not: it is inferred as the
 left-arm return from the way 3 and 4 pair on the right. A log for it exists, but the
 observations table below carries no row for it, because an inference behind an evidence link
