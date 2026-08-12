@@ -222,23 +222,33 @@ control-plane daemon holding the link and streaming its heartbeat so the body's 
 stayed suppressed while each code was watched. These codes are **animated arm gestures**: a code
 plays a short motion and the arm settles into a pose, reaching the same joints the `0xB6` limb
 selector drives but as pre-canned animations rather than direct joint targets. Codes 1-12 drive
-the **left** arm; 13-24 mirror them on the **right** (code 13, the right-arm raise, was watched
-directly; the rest are read as the mirror). Each odd/even icon pair reaches roughly one position:
+the **left** arm; 13-24 mirror them on the **right** — the odd code of each right pair (13, 15,
+17, 19, 21, 23) was watched directly and matched its left twin. Each odd/even icon pair reaches
+roughly one position:
 
 | Left codes | Right codes | Frame (left odd) | Arm motion |
 |---|---|---|---|
 | 1, 2 | 13, 14 | `B2 01 01 01 AA` | shoulder raises the arm forward/up |
 | 3, 4 | 15, 16 | `B2 01 03 03 AA` | arm lowers to rest |
 | 5, 6 | 17, 18 | `B2 01 05 05 AA` | shoulder raises the arm out to the side (lateral) |
-| 7, 8 | 19, 20 | `B2 01 07 07 AA` | a rest position (hard to tell from 3/4 by eye) |
+| 7, 8 | 19, 20 | `B2 01 07 07 AA` | brings **both** arms down together — a bilateral reset/home, not a one-side move |
 | 9, 10 | 21, 22 | `B2 01 09 09 AA` | elbow bends the forearm up |
 | 11, 12 | 23, 24 | `B2 01 0B 0B AA` | elbow lowers the forearm back down |
 
-One operational note, recorded here because it cost a servo squeal to learn: these `0xB2` gesture
-codes **re-run their motion on every frame**, so they must be pulsed once, never streamed — the
-opposite of a `0xB6` pose, which is held safely by re-streaming the same frame. Relatedly, a
-`0xB6` all-zero NOOP streamed on the link holds the body's idle motion off but does **not** freeze
-the LED face, which cycles on its own; freezing the face needs the face frame streamed.
+Two operational notes, both learned on hardware:
+
+- These `0xB2` gesture codes **re-run their motion on every frame**, so they must be pulsed once,
+  never streamed — re-asserting one re-triggers the gesture and squeals the servos. This is the
+  opposite of a `0xB6` pose, which is held safely by re-streaming the same frame.
+- Because they animate, they **do not reliably hold** a position — the resting pose depends on
+  timing, so treat them as motions, not static targets. To hold a static arm pose, drive the
+  `0xB6` limb selector instead (it holds), and pulse several `0xB6` poses in turn to build a held
+  multi-joint pose — e.g. left shoulder out then right shoulder out leaves both arms held out at
+  once, since each limb holds independently. See [movement-vocabulary.md](movement-vocabulary.md).
+
+Relatedly, a `0xB6` all-zero NOOP streamed on the link holds the body's idle motion off but does
+**not** freeze the LED face, which cycles on its own; freezing the face needs the face frame
+streamed.
 
 ### Expression codes (39-48), on hardware
 
