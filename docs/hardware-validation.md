@@ -162,7 +162,16 @@ uv run carle status                  # daemon should report disconnected, then r
 - [x] Normal driving (moves, poses, faces, gestures) still works with the write timeout in place.
       **Confirmed 2026-08-13:** `queue wave` (6 steps) and `queue pose:5 face:47 gesture:1`
       (3 steps) both drained; operator observed the wave, pose 5, and the face-47 smile live.
-- [ ] A real link drop mid-drive does **not** freeze the daemon; it reconnects and the heartbeat resumes.
+- [x] A real link drop mid-drive does **not** freeze the daemon; it reconnects and the heartbeat resumes.
+      **Ran 2026-08-13 (robot powered off ~10 s mid-queue):** no freeze; `status` flipped to
+      `disconnected` within seconds and back to `connected` right after power-on. **But the
+      finding that matters: the queue kept EXECUTING while disconnected** — 18 → 11 → 5 queued
+      during the outage — burning every remaining step into the dead link (writes are
+      without-response, so nothing bounces). By reconnect the queue was empty; steps that "ran"
+      during the outage never happened physically and are silently lost. The tick loop must
+      pause on disconnect and resume the queue after reconnect. Held-face re-assertion across
+      the reboot looked absent on camera (display changed when face:47 was re-sent) but LED
+      faces animate, so treat that half as unconfirmed.
 
 **Still-open, need hardware to design/validate** (deferred in PR #18 — do NOT "fix" these blind;
 each needs the robot to see the real behavior first):
@@ -191,8 +200,13 @@ each needs the robot to see the real behavior first):
 
 **What:** the daemon schedules a background reconnect on a dropped link.
 **Why unverified:** never exercised end-to-end on hardware (only against the fake client).
-- [ ] Power-cycle or range-drop the robot while the daemon runs; confirm it reconnects on its own
+- [x] Power-cycle or range-drop the robot while the daemon runs; confirm it reconnects on its own
       and the queue continues, holding the link as the sole owner.
+      **Ran 2026-08-13, split verdict:** reconnect-on-its-own WORKS (twice — a quiet power
+      cycle while idle, and a mid-drive one). "The queue continues" is REFUTED in the way that
+      matters: the queue does not pause during the outage — it executes into the dead link and
+      is empty by reconnect (see item C's link-drop entry). Fix direction: tick loop pauses on
+      disconnect, queue resumes after reconnect.
 
 ---
 
@@ -238,14 +252,28 @@ too faint to time them), and this timing is the blocker for the media quiet-wind
 **Why unverified without hardware:** it needs the robot **and** a camera pointed at it. PR #18 also
 added a per-code connectivity/battery re-check (halts a run if the robot drops mid-sweep) — validate
 that halts correctly live.
-- [ ] Run `carle observe --dry-run` first to see the plan (no hardware). Then run it for real under
+- [x] Run `carle observe --dry-run` first to see the plan (no hardware). Then run it for real under
       the orchestrating agent with the robot + camera, and confirm it drives, captures, and records.
+      **Scoped live run 2026-08-13 (gesture:5, agent as judge/writer):** the cycle works —
+      drive through the daemon, capture, judge, retry, record. Three operational findings:
+      (1) the default 1 fps / 6-frame sampling **missed the gesture animation entirely** in two
+      full rounds — canned `0xB2` gestures are too fast for it; a 30 fps clip with
+      scene-detect frame extraction caught the motion. (2) Anything animated in the background
+      (here: a projector on the whiteboard) triggers false scene changes — motion detection
+      must be cropped to the robot's region. (3) The gesture:5 motion caught on camera was a
+      **small** left-arm out/up excursion, far shallower than the full lateral raise the
+      reference records from the earlier session — logged as uncertain, not a doc edit;
+      redrive it hard (3× pulse) when the variation ladder exists in code.
 - [ ] Confirm the mid-run halt: drop the link partway through and check the run stops with
       "stopped after N codes," rather than recording garbage for the rest.
 - [ ] **Variation ladder (feature gap, deferred in PR #18):** `drive_code`/`capture_frames` do not
       yet implement the brighter/longer/raise-first variations `observe/loop.py` documents. Deciding
       the right brightness/duration bumps and the raise-first pre-pose wants the camera + robot in
-      the loop.
+      the loop. **Design input from the 2026-08-13 scoped run:** the first ladder rung should be
+      *sampling density*, not brightness — capture at full rate and extract frames by scene change
+      **cropped to the robot's region** (background screens/projectors false-trigger otherwise);
+      1 fps sampling provably misses whole gesture animations. Add a repeat-pulse rung (≈3×) for
+      under-extending servos before concluding a motion is shallow.
 
 ---
 

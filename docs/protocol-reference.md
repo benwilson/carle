@@ -428,14 +428,14 @@ is an off switch the app itself exposes.
 
 ## Audio channel
 
-*Not documented.*
-
-The robot is understood to expose a Bluetooth audio sink separate from its BLE control link,
-pairable from ordinary system Bluetooth settings, advertised as `JT_Speaker` where the control
-radio advertises as `JT_`. **That the two are independent comes from a marketplace listing and
-the two advertised names, not from vendor documentation or observation, and it has not been
-checked.** Whether a program can drive motion while audio plays — the question this answers — is
-one of the more interesting open ones.
+The robot exposes a Bluetooth audio sink separate from its BLE control link, pairable from
+ordinary system Bluetooth settings, advertised as `JT_Speaker` where the control radio
+advertises as `JT_`. The two links are independent in practice: host audio plays through the
+speaker while BLE frames drive motion, without either interrupting the other — the speak
+service ([`docs/speak.md`](speak.md)) leans on exactly this, exercised live on hardware in the
+August 2026 sessions, including with motion queued mid-playback. One caveat carried from those
+sessions: a power cycle of the robot leaves a long-running host audio session stale (see
+[`hardware-validation.md`](hardware-validation.md)).
 
 ## Hardware
 
