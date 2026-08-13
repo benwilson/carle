@@ -277,7 +277,10 @@ is recorded here instead.
 
 The two "hand" tabs were driven on a real robot on 2026-08-12, one code at a time, with the
 control-plane daemon holding the link and streaming its heartbeat so the body's idle motion
-stayed suppressed while each code was watched. These codes are **animated arm gestures**: a code
+stayed suppressed while each code was watched. The full set (all 24, plus the twelve `0xB6`
+limb poses) was re-derived by the camera-in-the-loop sweep the following day — two agreeing
+camera readings per code through the variation ladder — and every reading matched this table.
+These codes are **animated arm gestures**: a code
 plays a short motion and the arm settles into a pose, reaching the same joints the `0xB6` limb
 selector drives but as pre-canned animations rather than direct joint targets. Codes 1-12 drive
 the **left** arm; 13-24 mirror them on the **right** — the odd code of each right pair (13, 15,

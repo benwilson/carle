@@ -272,6 +272,18 @@ that halts correctly live.
       **small** left-arm out/up excursion, far shallower than the full lateral raise the
       reference records from the earlier session — logged as uncertain, not a doc edit;
       redrive it hard (3× pulse) when the variation ladder exists in code.
+- [x] **FULL 36-CODE SWEEP RUN (2026-08-13, after the ladder landed):** every pose (1-12) and
+      every hand code (1-24), two independent camera readings per code through the real
+      `MotionRecording`/`drive_for_variation` seams — raising codes on the baseline rung,
+      lowering/return codes on the raise_first rung (a lower from rest shows nothing). Result:
+      **all 36 codes reproduced with two agreeing readings, and every reading matches the
+      protocol reference's table** — no writer edits earned, no code left uncertain. The
+      morning's gesture:5 "uncertain" resolved: under motion-extracted capture it reads
+      cleanly as the left lateral raise the reference records. Single-pulse amplitudes run
+      shallow across the board (full extension needs the repeat rung — consistent with the
+      pose vocabulary's drive-each-joint-hard guidance), and the right lateral (pose 7,
+      gestures 17/18) reads shallower than the left, consistent with the documented weak
+      right lateral servo. Frames were discarded after judging (R7).
 - [ ] Confirm the mid-run halt: drop the link partway through and check the run stops with
       "stopped after N codes," rather than recording garbage for the rest.
 - [x] **Variation ladder — IMPLEMENTED (2026-08-13, same day as the design input below):**
