@@ -11,6 +11,21 @@ imports — and its tests collect — on a lean or headless runner without them 
 
 from __future__ import annotations
 
+from carle.speak.decode import (
+    DecodeError,
+    PcmBuffer,
+    RawPcmFormat,
+    decode_clip,
+    stream_pcm_blocks,
+)
 from carle.speak.sink import AudioSink, DeviceUnavailableError
 
-__all__ = ["AudioSink", "DeviceUnavailableError"]
+__all__ = [
+    "AudioSink",
+    "DecodeError",
+    "DeviceUnavailableError",
+    "PcmBuffer",
+    "RawPcmFormat",
+    "decode_clip",
+    "stream_pcm_blocks",
+]
