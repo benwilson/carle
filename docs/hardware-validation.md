@@ -274,14 +274,15 @@ that halts correctly live.
       redrive it hard (3× pulse) when the variation ladder exists in code.
 - [ ] Confirm the mid-run halt: drop the link partway through and check the run stops with
       "stopped after N codes," rather than recording garbage for the rest.
-- [ ] **Variation ladder (feature gap, deferred in PR #18):** `drive_code`/`capture_frames` do not
-      yet implement the brighter/longer/raise-first variations `observe/loop.py` documents. Deciding
-      the right brightness/duration bumps and the raise-first pre-pose wants the camera + robot in
-      the loop. **Design input from the 2026-08-13 scoped run:** the first ladder rung should be
-      *sampling density*, not brightness — capture at full rate and extract frames by scene change
-      **cropped to the robot's region** (background screens/projectors false-trigger otherwise);
-      1 fps sampling provably misses whole gesture animations. Add a repeat-pulse rung (≈3×) for
-      under-extending servos before concluding a motion is shallow.
+- [x] **Variation ladder — IMPLEMENTED (2026-08-13, same day as the design input below):**
+      `MotionRecording` in `observe/capture.py` records at full rate and extracts scene-change
+      frames **cropped to the robot's region** (with an even-sampling fallback so stillness is
+      readable, not an error); `drive_for_variation` in `observe/driver.py` implements the
+      `raise_first` pre-pulse (paired-raise mapping for both families) and the 3× `repeat`
+      rung; per-rung capture specs cover brighter/longer. Unit-tested against fake runners.
+      **Design input from the scoped run (kept for the record):** sampling density had to be
+      the first rung, not brightness — 1 fps sampling provably missed whole gesture
+      animations, and background screens/projectors false-trigger a whole-frame detector.
 
 ---
 

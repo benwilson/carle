@@ -96,3 +96,100 @@ def test_cleanup_removes_the_scratch_dir_and_is_idempotent(tmp_path):
     result.cleanup()
     assert not sub.exists()
     result.cleanup()  # second call must not raise
+
+
+# --- the variation ladder capture (KTD6) ----------------------------------------------
+
+from carle.observe.capture import (  # noqa: E402 - grouped with the tests that use them
+    CAPTURE_SPECS,
+    DEFAULT_CROP,
+    MOTION_THRESHOLD,
+    MotionRecording,
+    build_extract_argv,
+    build_record_argv,
+    build_sample_argv,
+    spec_for,
+)
+
+
+def test_variation_specs_cover_every_ladder_rung():
+    from carle.observe.loop import DEFAULT_VARIATIONS
+
+    for rung in DEFAULT_VARIATIONS:
+        assert rung in CAPTURE_SPECS
+    assert CAPTURE_SPECS["brighter"].brightness > CAPTURE_SPECS["baseline"].brightness
+    assert CAPTURE_SPECS["longer"].duration > CAPTURE_SPECS["baseline"].duration
+    # repeat records longer than baseline so all three pulses land inside the clip
+    assert CAPTURE_SPECS["repeat"].duration > CAPTURE_SPECS["baseline"].duration
+    assert spec_for("no-such-rung") == CAPTURE_SPECS["baseline"]
+
+
+def test_record_argv_is_full_rate_and_extract_argv_crops_the_motion_detection():
+    spec = spec_for("baseline")
+    record = build_record_argv("0", spec, "/tmp/clip.mp4")
+    assert "fps=" not in " ".join(record)  # full rate: no sampling at record time
+    assert f"-t" in record and f"{spec.duration}" in record
+
+    extract = build_extract_argv("/tmp/clip.mp4", spec, "/tmp/f_%03d.jpg")
+    vf = extract[extract.index("-vf") + 1]
+    w, h, x, y = DEFAULT_CROP
+    assert f"crop=iw*{w}:ih*{h}:iw*{x}:ih*{y}" in vf  # detection confined to the robot
+    assert f"gt(scene,{MOTION_THRESHOLD})" in vf
+
+
+class _FakeFfmpeg:
+    """Routes record/extract/sample argvs: writes a video, then motion frames (or none)."""
+
+    def __init__(self, motion_frames: int) -> None:
+        self.motion_frames = motion_frames
+        self.calls: list[str] = []
+
+    def __call__(self, argv, _timeout):
+        argv = list(argv)
+        out = argv[-1]
+        if out.endswith(".mp4"):
+            self.calls.append("record")
+            Path(out).write_bytes(b"video")
+            return 0, ""
+        vf = argv[argv.index("-vf") + 1]
+        if "select" in vf:
+            self.calls.append("extract")
+            for i in range(self.motion_frames):
+                Path(out % (i + 1)).write_bytes(b"jpg")
+            return 0, ""
+        self.calls.append("sample")
+        for i in range(3):
+            Path(out % (i + 1)).write_bytes(b"jpg")
+        return 0, ""
+
+
+def test_motion_recording_extracts_the_frames_that_moved(tmp_path):
+    ffmpeg = _FakeFfmpeg(motion_frames=4)
+    recording = MotionRecording("baseline", scratch_dir=tmp_path, runner=ffmpeg)
+
+    result = recording.finish()
+
+    assert ffmpeg.calls == ["record", "extract"]
+    assert len(result.frames) == 4
+
+
+def test_motion_recording_falls_back_to_sampling_when_nothing_moved(tmp_path):
+    # No motion above threshold is a VALID outcome (the code may do nothing visible): the
+    # judge must get evenly sampled frames to read the stillness, not a capture error.
+    ffmpeg = _FakeFfmpeg(motion_frames=0)
+    recording = MotionRecording("baseline", scratch_dir=tmp_path, runner=ffmpeg)
+
+    result = recording.finish()
+
+    assert ffmpeg.calls == ["record", "extract", "sample"]
+    assert len(result.frames) == 3
+
+
+def test_motion_recording_surfaces_a_failed_recording(tmp_path):
+    def broken(argv, _timeout):
+        return 1, "avfoundation: device busy"
+
+    recording = MotionRecording("baseline", scratch_dir=tmp_path, runner=broken)
+
+    with pytest.raises(CaptureError):
+        recording.finish()
