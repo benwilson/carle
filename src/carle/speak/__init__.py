@@ -11,6 +11,7 @@ imports — and its tests collect — on a lean or headless runner without them 
 
 from __future__ import annotations
 
+from carle.speak.animate import RobotAnimation
 from carle.speak.decode import (
     DecodeError,
     PcmBuffer,
@@ -36,6 +37,7 @@ __all__ = [
     "Outcome",
     "PcmBuffer",
     "RawPcmFormat",
+    "RobotAnimation",
     "SpeakServer",
     "SpeakService",
     "StreamPlayer",
