@@ -41,6 +41,10 @@ characteristics are decoded from the app, but the battery read comes back empty 
 so whether the robot actually exposes those read paths still needs checking on hardware; and a
 handful of fine details the setup couldn't measure (individual song lengths, for one — the robot
 sends no playback signal and the room mic was too far to time them).
+[`docs/hardware-validation.md`](docs/hardware-validation.md) is the running checklist of exactly
+what still needs the robot to confirm and the steps to do it — the speak service's audio/animation
+path, the battery/version reads, reconnect-resume, and a few daemon behaviours built and tested
+without hardware but not yet proven against it.
 [`docs/protocol-reference.md`](docs/protocol-reference.md) is the full reference, and
 [`docs/movement-vocabulary.md`](docs/movement-vocabulary.md) maps plain-language moves to the byte
 primitives with servo-safe timing.
