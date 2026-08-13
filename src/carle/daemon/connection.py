@@ -41,6 +41,11 @@ RECONNECT_BACKOFF = 1.5
 #: Bound on a battery GATT read, so a hung read cannot stall a status request.
 BATTERY_READ_TIMEOUT = 2.0
 
+#: Bound on a single frame-chunk GATT write. Without it, a stalled write (a peripheral that
+#: never acks) would hang the tick loop forever while holding the connection lock — freezing
+#: the heartbeat, every queued command, and even a status read waiting on the same lock.
+WRITE_TIMEOUT = 2.0
+
 
 class DaemonConnectionError(Exception):
     """Raised by `send_frame`/`read_battery` when the link is down.
@@ -146,7 +151,12 @@ class DaemonConnection:
                 raise DaemonConnectionError("link is down")
             try:
                 for chunk in chunked(frame):
-                    await self._client.write(WRITE_CHARACTERISTIC, chunk)
+                    # Bound each chunk write (mirrors read_battery): a stalled ack must not
+                    # wedge the tick loop with the connection lock held. A timeout is an
+                    # Exception, so it flows into the same dropped-link handling below.
+                    await asyncio.wait_for(
+                        self._client.write(WRITE_CHARACTERISTIC, chunk), timeout=WRITE_TIMEOUT
+                    )
             except Exception as exc:  # noqa: BLE001 - any BLE failure is a dropped link
                 self._client = None
                 self._schedule_reconnect()

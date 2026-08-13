@@ -113,8 +113,14 @@ def resolve(
             out.append(byte_literal(item))
             continue
         spec = parameters[name]
-        value = int(overrides.get(name, spec["default"]))
-        low, high = int(spec["min"]), int(spec["max"])
+        try:
+            value = int(overrides.get(name, spec["default"]))
+            low, high = int(spec["min"]), int(spec["max"])
+        except (TypeError, ValueError) as exc:
+            # A malformed parameter spec (a non-numeric min/max/default — null, a string, a
+            # list) must surface as a FrameError the table gate reports as one violation, not
+            # an uncaught TypeError/ValueError that crashes the whole run (mirrors byte_literal).
+            raise FrameError(f"{name} has a non-numeric min/max/default: {exc}") from exc
         if not low <= value <= high:
             raise FrameError(f"{name} is {value}, outside its documented range {low}-{high}")
         if not 0 <= value <= 0xFF:
