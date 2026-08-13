@@ -111,6 +111,36 @@ def test_capture_error_midrun_stops_and_reports_count(capsys):
     assert "stopped after 1 codes" in err and "camera went dark" in err
 
 
+def test_midrun_disconnect_halts_the_loop_and_reports_count(capsys):
+    # R11: the robot can drop the link partway through a multi-minute run. The per-code
+    # re-check must halt rather than drive and record garbage for the remaining codes.
+    calls = {"status": 0}
+
+    def requester(_req):
+        # Status is polled once before the loop, then again before each code. Ready for the
+        # pre-loop check and the first code, then the link drops.
+        calls["status"] += 1
+        return {"ok": True, "status": {"connected": calls["status"] <= 2, "battery": None}}
+
+    driven = {"n": 0}
+
+    def derive(family, code):
+        driven["n"] += 1
+        return CodeResult(family, code, "confirmed", Observation(code, "left_arm", "raise"), 2)
+
+    code = main(
+        ["observe", "--codes", "gesture:1,gesture:2,gesture:3"],
+        daemon_live=lambda: True,
+        requester=requester,
+        observe_derive=derive,
+        observe_record=lambda r: None,
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "stopped after 1 codes" in err and "not connected" in err
+    assert driven["n"] == 1  # drove the first code, then halted on the drop before the second
+
+
 def test_full_run_records_every_code(capsys):
     recorded = []
 

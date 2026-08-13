@@ -515,6 +515,34 @@ def test_a_log_reused_inside_a_multi_log_observation_is_caught(tmp_path):
     assert "observation.duplicate-log" in codes(problems_for(tmp_path, [row]))
 
 
+def test_the_same_log_under_a_different_spelling_is_still_a_duplicate(tmp_path):
+    """One send cited twice under path-equivalent spellings (`x.log` vs `./x.log`) must
+    not read as two independent confirmations — the count is keyed on the resolved path."""
+    evidence_log(tmp_path, name="dup.log")  # writes evidence/dup.log
+    row = {
+        **CONFIRMED_ROW,
+        "observations": [
+            observation("evidence/dup.log"),
+            observation("evidence/./dup.log"),  # the same file, re-spelled
+        ],
+    }
+    assert "observation.duplicate-log" in codes(problems_for(tmp_path, [row]))
+
+
+def test_a_non_numeric_parameter_spec_is_reported_not_a_crash(tmp_path):
+    """A malformed parameter declaration (a null/string min/max/default) must surface as
+    one `frame.unbuildable` violation, not an uncaught TypeError that crashes the whole
+    gate before it can report on any other row."""
+    row = {
+        **CONFIRMED_ROW,
+        "payload": ["{level}"],
+        "parameters": {"level": {"min": 0, "max": 10, "default": None}},
+        "observations": [good_observation(tmp_path)],
+    }
+    # problems_for must return a report (the run survives), never raise.
+    assert "frame.unbuildable" in codes(problems_for(tmp_path, [row]))
+
+
 # --- State rules ------------------------------------------------------------
 
 

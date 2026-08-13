@@ -97,14 +97,26 @@ def capture_frames(
     runner: Runner = _default_runner,
     timeout: float = CAPTURE_TIMEOUT,
 ) -> CaptureResult:
-    """Record a clip and return its sampled frames. Raises CaptureError on any failure."""
+    """Record a clip and return its sampled frames. Raises CaptureError on any failure.
+
+    A failure before a `CaptureResult` exists (a nonzero ffmpeg exit, an empty burst, a
+    timeout or missing binary from the runner) still removes the scratch dir we created, so
+    a flaky ffmpeg over a long autonomous run does not orphan a `carle-observe-*` temp dir
+    per failure. A caller-supplied `scratch_dir` is left alone — the caller owns it.
+    """
+    owns_scratch = scratch_dir is None
     scratch = Path(scratch_dir) if scratch_dir else Path(tempfile.mkdtemp(prefix="carle-observe-"))
     scratch.mkdir(parents=True, exist_ok=True)
     out_pattern = str(scratch / "frame_%03d.jpg")
-    code, stderr = runner(build_argv(device, duration, frames, out_pattern), timeout)
-    if code != 0:
-        raise CaptureError(f"ffmpeg exited {code}: {stderr.strip()[:200]}")
-    paths = sorted(scratch.glob("frame_*.jpg"))
-    if not paths:
-        raise CaptureError("capture produced no frames")
+    try:
+        code, stderr = runner(build_argv(device, duration, frames, out_pattern), timeout)
+        if code != 0:
+            raise CaptureError(f"ffmpeg exited {code}: {stderr.strip()[:200]}")
+        paths = sorted(scratch.glob("frame_*.jpg"))
+        if not paths:
+            raise CaptureError("capture produced no frames")
+    except BaseException:
+        if owns_scratch:
+            shutil.rmtree(scratch, ignore_errors=True)
+        raise
     return CaptureResult(scratch_dir=scratch, frames=paths)

@@ -31,6 +31,7 @@ class FakeClient:
         self.writes: list[tuple[str, bytes]] = []
         self._battery = battery  # None models a robot with no battery characteristic
         self.drop_on_write = False
+        self.hang_on_write = False  # models a peripheral that never acks a write
         self._busy = False  # trips if a second GATT op starts before the first finishes
 
     @property
@@ -55,6 +56,8 @@ class FakeClient:
         if self.drop_on_write:
             self.connected = False
             raise RuntimeError("link dropped")
+        if self.hang_on_write:
+            await asyncio.Event().wait()  # never returns: a stalled ack
         await self._guarded()
         self.writes.append((characteristic, bytes(data)))
 
@@ -103,6 +106,23 @@ def test_send_on_dropped_link_raises_then_reconnects_and_lands():
         # The second client (from the reconnect) carries the write, not the dropped one.
         assert clients[-1].writes == [(WRITE_CHARACTERISTIC, NOOP)]
         assert len(clients) == 2
+
+    asyncio.run(scenario())
+
+
+def test_a_hung_write_times_out_and_drops_the_link(monkeypatch):
+    # A peripheral that never acks a write must not wedge the tick loop forever with the
+    # connection lock held. The bounded write turns the stall into a normal dropped link.
+    monkeypatch.setattr("carle.daemon.connection.WRITE_TIMEOUT", 0.05)
+
+    async def scenario():
+        conn, clients = make_connection()
+        await conn.connect()
+        clients[-1].hang_on_write = True
+        with pytest.raises(DaemonConnectionError):
+            await conn.send_frame(NOOP)
+        assert not conn.is_connected  # marked down and a reconnect scheduled
+        assert conn._reconnect_task is not None
 
     asyncio.run(scenario())
 

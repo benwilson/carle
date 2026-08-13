@@ -60,6 +60,35 @@ def test_runner_failure_propagates_as_capture_error(tmp_path):
         capture_frames(scratch_dir=tmp_path, runner=runner)
 
 
+def test_failure_removes_a_temp_scratch_dir_it_created(monkeypatch):
+    # With scratch_dir=None capture creates its own temp dir. A failure before a
+    # CaptureResult exists (so cleanup() is never callable) must not orphan it.
+    import tempfile
+
+    created: list[Path] = []
+    real_mkdtemp = tempfile.mkdtemp
+
+    def tracking_mkdtemp(*args, **kwargs):
+        made = real_mkdtemp(*args, **kwargs)
+        created.append(Path(made))
+        return made
+
+    monkeypatch.setattr("carle.observe.capture.tempfile.mkdtemp", tracking_mkdtemp)
+
+    with pytest.raises(CaptureError, match="exited 1"):
+        capture_frames(runner=lambda _a, _t: (1, "boom"))
+
+    assert created and not created[0].exists()  # the temp dir was cleaned up, not orphaned
+
+
+def test_failure_leaves_a_caller_supplied_scratch_dir_in_place(tmp_path):
+    # The caller owns a scratch_dir it passed in, so a failure must not delete it.
+    sub = tmp_path / "mine"
+    with pytest.raises(CaptureError):
+        capture_frames(scratch_dir=sub, runner=lambda _a, _t: (1, "boom"))
+    assert sub.exists()
+
+
 def test_cleanup_removes_the_scratch_dir_and_is_idempotent(tmp_path):
     sub = tmp_path / "clip"
     result = capture_frames(scratch_dir=sub, frames=2, runner=_runner_that_writes(2))

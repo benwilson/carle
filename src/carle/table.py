@@ -420,7 +420,7 @@ def _validate_evidence(entry: Entry, root: Path) -> list[str]:
     other twenty-four say anything at all.
     """
     problems: list[str] = []
-    seen_logs: dict[str, int] = {}
+    seen_logs: dict[object, int] = {}
 
     for index, observation in enumerate(entry.observations):
         problems.extend(_validate_observation(entry, observation, index, root))
@@ -428,15 +428,31 @@ def _validate_evidence(entry: Entry, root: Path) -> list[str]:
         # takes as a measure of how widely the command was exercised. Two
         # observations over one send would read as two independent confirmations.
         for log in observation.logs:
-            if log in seen_logs:
+            # Key off the resolved path, not the raw string, so two path-equivalent
+            # spellings of one file ("evidence/x.log" vs "evidence/./x.log") cannot pass as
+            # two independent confirmations of a single send.
+            key = _log_identity(log, root)
+            if key in seen_logs:
                 problems.append(
                     f"{entry.id}[{index}]: [observation.duplicate-log] cites {log!r}, which "
-                    f"observation {seen_logs[log]} already cites; one send is one observation"
+                    f"observation {seen_logs[key]} already cites; one send is one observation"
                 )
             else:
-                seen_logs[log] = index
+                seen_logs[key] = index
 
     return problems
+
+
+def _log_identity(log: str, root: Path) -> object:
+    """A canonical key for one evidence log, so path-equivalent spellings collide.
+
+    Resolves the same way `_validate_log_path` does. Falls back to the raw string if the
+    value cannot be turned into a path (already reported as a shape violation elsewhere).
+    """
+    try:
+        return (root / Path(log)).resolve()
+    except (TypeError, ValueError, OSError):
+        return log
 
 
 def _validate_observation(

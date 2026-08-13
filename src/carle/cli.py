@@ -138,8 +138,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="comma-separated family:code list to derive (default: the full arm set)",
     )
     observe.add_argument("--device", default="0", help="camera device index (default: 0)")
-    observe.add_argument("--repeats", type=int, default=2, help="agreeing readings to confirm")
-    observe.add_argument("--retries", type=int, default=2, help="extra retry attempts per code")
     observe.add_argument(
         "--dry-run", action="store_true", help="list the code set and loop, touch no hardware"
     )
@@ -644,7 +642,6 @@ def _parse_observe_codes(spec: str) -> list[tuple[str, int]]:
 
 def _run_observe(args, requester, daemon_live, derive, record) -> int:
     """Drive the observe loop over the arm code set; stop cleanly if the robot is unreachable."""
-    from carle.daemon.client import NoDaemonError
     from carle.observe.capture import CaptureError
     from carle.observe.driver import DriverError
 
@@ -655,7 +652,7 @@ def _run_observe(args, requester, daemon_live, derive, record) -> int:
         return 1
 
     if args.dry_run:
-        print(f"observe plan: {len(codes)} codes (repeats={args.repeats}, retries={args.retries})")
+        print(f"observe plan: {len(codes)} codes")
         for family, code in codes:
             print(f"  {family}:{code}")
         return 0
@@ -669,23 +666,9 @@ def _run_observe(args, requester, daemon_live, derive, record) -> int:
 
     # R11: a live socket but a disconnected or dead robot must halt, not "drive" a robot that
     # cannot move and record garbage. The daemon's status reports connection and battery.
-    try:
-        status = requester({"op": "status"}).get("status", {})
-    except NoDaemonError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    if not status.get("connected", False):
-        print(
-            "error: robot is not connected (dropped link or dead battery) — stopping",
-            file=sys.stderr,
-        )
-        return 1
-    battery = status.get("battery")
-    if battery is not None and battery <= OBSERVE_MIN_BATTERY:
-        print(
-            f"error: robot battery critically low ({battery}%) — stopping",
-            file=sys.stderr,
-        )
+    blocked = _observe_readiness_error(requester)
+    if blocked is not None:
+        print(f"error: {blocked}", file=sys.stderr)
         return 1
 
     # The full judge-in-loop derivation is agent-driven (KTD1): a real run supplies the derive
@@ -700,6 +683,13 @@ def _run_observe(args, requester, daemon_live, derive, record) -> int:
 
     done = 0
     for family, code in codes:
+        # R11 again, per code: the robot can drop the link or drain the battery partway
+        # through a multi-minute run. The daemon socket stays up when the robot link drops,
+        # so without this re-check the loop would drive and record garbage for a dead robot.
+        blocked = _observe_readiness_error(requester)
+        if blocked is not None:
+            print(f"error: stopped after {done} codes: {blocked}", file=sys.stderr)
+            return 1
         try:
             record(derive(family, code))
         except (CaptureError, DriverError) as exc:
@@ -708,6 +698,26 @@ def _run_observe(args, requester, daemon_live, derive, record) -> int:
         done += 1
     print(f"observed {done} codes")
     return 0
+
+
+def _observe_readiness_error(requester) -> str | None:
+    """Return a reason the robot cannot be driven right now, or None if it is ready (R11).
+
+    Checked before the run and again before every code, so a link drop or a battery that
+    crosses the floor partway through halts the run instead of recording garbage.
+    """
+    from carle.daemon.client import NoDaemonError
+
+    try:
+        status = requester({"op": "status"}).get("status", {})
+    except NoDaemonError as exc:
+        return str(exc)
+    if not status.get("connected", False):
+        return "robot is not connected (dropped link or dead battery) — stopping"
+    battery = status.get("battery")
+    if battery is not None and battery <= OBSERVE_MIN_BATTERY:
+        return f"robot battery critically low ({battery}%) — stopping"
+    return None
 
 
 #: What to tell the operator when the audio backends are missing — the `carle[speak]`

@@ -36,6 +36,7 @@ import functools
 import logging
 import threading
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 from carle.daemon import client
 from carle.speak.stream import Outcome
@@ -84,7 +85,7 @@ class RobotAnimation:
         self,
         *,
         request: RequestFn | None = None,
-        socket_path: str | None = None,
+        socket_path: str | Path | None = None,
         face_code: int = TALKING_FACE,
         gestures: Sequence[int] = TALKING_GESTURES,
         neutral_face: int = NEUTRAL_FACE,
