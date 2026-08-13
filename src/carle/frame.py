@@ -48,15 +48,20 @@ def checksum(payload: bytes | list[int]) -> int:
 
 
 def build(family: int, payload: bytes | list[int]) -> bytes:
-    """Assemble the wire frame for a family and a resolved payload."""
-    if family not in FAMILIES:
+    """Assemble the wire frame for a family and a resolved payload.
+
+    Total on the error path: any bad input — a non-int or unknown family, an oversized
+    payload, a non-byte payload element — raises `FrameError`, never a bare `TypeError`
+    from formatting the offending value (`!r`, so `None`/strings/floats report cleanly).
+    """
+    if not isinstance(family, int) or isinstance(family, bool) or family not in FAMILIES:
         known = ", ".join(f"0x{f:02X}" for f in sorted(FAMILIES))
-        raise FrameError(f"family 0x{family:02X} is not one of the documented families ({known})")
+        raise FrameError(f"family {family!r} is not one of the documented families ({known})")
     if len(payload) > MAX_PAYLOAD:
         raise FrameError(f"payload is {len(payload)} bytes; the length field holds at most 255")
     for index, byte in enumerate(payload):
-        if not 0 <= byte <= 0xFF:
-            raise FrameError(f"payload byte {index} is {byte}, outside 0-255")
+        if not isinstance(byte, int) or isinstance(byte, bool) or not 0 <= byte <= 0xFF:
+            raise FrameError(f"payload byte {index} is {byte!r}, outside 0-255")
     return bytes([family, len(payload), *payload, checksum(payload), TERMINATOR])
 
 
