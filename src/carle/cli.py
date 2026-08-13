@@ -144,7 +144,47 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="list the code set and loop, touch no hardware"
     )
 
+    _add_speak_server_parser(sub)
+
     return parser
+
+
+def _add_speak_server_parser(sub: argparse._SubParsersAction) -> None:
+    """Register `carle speak-server` without importing the audio backends (U6).
+
+    The port and socket defaults come from lazy-safe modules — importing them does not
+    require the `carle[speak]` extra — so the parser (and `carle --help`) builds on a
+    lean install; the missing extra only bites when the server actually serves.
+    """
+    from carle.daemon.server import DEFAULT_SOCKET_PATH
+    from carle.speak.server import DEFAULT_PORT as SPEAK_DEFAULT_PORT
+
+    speak = sub.add_parser(
+        "speak-server",
+        help="serve the local audio API that voices clips and streams through the robot's speaker",
+    )
+    speak.add_argument(
+        "--device",
+        default="JT_Speaker",
+        help="target output device name (default: JT_Speaker)",
+    )
+    speak.add_argument(
+        "--port",
+        type=int,
+        default=SPEAK_DEFAULT_PORT,
+        help="loopback port to bind (default: %(default)s)",
+    )
+    speak.add_argument(
+        "--socket",
+        type=Path,
+        default=DEFAULT_SOCKET_PATH,
+        help="daemon socket to drive animation on (default: %(default)s)",
+    )
+    speak.add_argument(
+        "--no-animate",
+        action="store_true",
+        help="play audio only; do not animate the robot over the daemon",
+    )
 
 
 def _check_macos_authorization(authorization: str | None) -> int | None:
@@ -669,6 +709,40 @@ def _run_observe(args, requester, daemon_live, derive, record) -> int:
     return 0
 
 
+#: What to tell the operator when the audio backends are missing — the `carle[speak]`
+#: extra is not installed. Mirrors the daemon's off-POSIX degradation: one clear line,
+#: never a traceback.
+SPEAK_EXTRA_HELP = (
+    "error: the speak server needs the audio extra — install with: pip install 'carle[speak]'"
+)
+
+
+def _run_speak_server(args: argparse.Namespace) -> int:
+    """Start the loopback speak server, degrading cleanly with no `carle[speak]` extra.
+
+    The speak modules are imported here, lazily, so a lean install still runs every other
+    verb. Importing `carle.speak.service` is itself backend-free; the PortAudio backends
+    load only when the server builds its real sink/stream, so a missing extra can surface
+    either at import or at serve time. Both are caught and reported as one line, exit 1.
+    """
+    try:
+        from carle.speak.service import build_speak_server, run_speak_server
+
+        server = build_speak_server(
+            device_name=args.device,
+            port=args.port,
+            socket_path=args.socket,
+            animate=not args.no_animate,
+        )
+        host, port = server.address
+        print(f"speak server listening on http://{host}:{port}")
+        run_speak_server(server)
+    except (ImportError, ModuleNotFoundError):
+        print(SPEAK_EXTRA_HELP, file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(
     argv: list[str] | None = None,
     backend: Backend | None = None,
@@ -704,6 +778,10 @@ def main(
         return _run_client_op({"op": "status"}, requester)
     if args.command == "observe":
         return _run_observe(args, requester, daemon_live, observe_derive, observe_record)
+    # The speak server speaks HTTP and (optionally) the daemon socket — never the radio —
+    # so it returns early like the queue verbs, ahead of the Bluetooth/daemon guard.
+    if args.command == "speak-server":
+        return _run_speak_server(args)
 
     # A dry run and a confirm never reach CoreBluetooth, so the authorization guard
     # must not block them — on a machine with Bluetooth denied it otherwise fails a
