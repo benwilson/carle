@@ -19,13 +19,16 @@ from carle.speak.decode import (
     stream_pcm_blocks,
 )
 from carle.speak.sink import AudioSink, DeviceUnavailableError
+from carle.speak.stream import Outcome, StreamPlayer
 
 __all__ = [
     "AudioSink",
     "DecodeError",
     "DeviceUnavailableError",
+    "Outcome",
     "PcmBuffer",
     "RawPcmFormat",
+    "StreamPlayer",
     "decode_clip",
     "stream_pcm_blocks",
 ]
