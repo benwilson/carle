@@ -13,6 +13,12 @@ dependencies = [
 [project.optional-dependencies]
 # The MCP server is optional: the daemon and CLI need only the base dependencies.
 mcp = ["mcp>=1.0"]
+speak = [
+    "miniaudio>=1.71",
+    "sounddevice>=0.5.5",
+    "soundfile>=0.14.0",
+    "soxr>=1.1.0",
+]
 
 [project.scripts]
 carle = "carle.cli:main"

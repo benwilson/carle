@@ -28,6 +28,7 @@ and speech.
 | Hardware observations | 28 across 3 commands, backed by 210 committed send logs |
 | Notify characteristic + robot state | Documented — notify is discarded; battery/versions come via reads |
 | Audio channel (`JT_Speaker`) | Verified — plays arbitrary host audio |
+| Speak service (`carle speak-server`) | Built and unit-tested; targets the speaker without touching the host default and animates while speaking — end-to-end hardware smoke test still open |
 | Firmware update (OTA/DFU) and chip | Documented from the app (Realtek `RTL8763B`) |
 | CLI scan / connect / info / send / confirm | Working |
 | Driving the robot (movement, media, audio) | Working |
@@ -159,6 +160,16 @@ crashing.
 **Speech.** The robot also exposes a separate Bluetooth audio sink, `JT_Speaker`. Paired and
 selected as the host's system audio output, it plays any host audio — so a `say:` step (macOS
 `say`) speaks through the robot. The daemon does not pair or route audio; that is host setup.
+
+**Speak service.** To route audio to the robot's speaker *without* making it the system default —
+so another app can pipe a rendered answer to the robot while your own headphones keep playing
+everything else — `carle speak-server` runs a small loopback HTTP API that plays caller-supplied
+audio to `JT_Speaker` as an explicitly targeted device, and animates the robot (a talking face and
+gestures) while the audio plays. It needs the optional audio extra (`pip install 'carle[speak]'`);
+without it the core CLI is unaffected. The BLE control link and the A2DP audio sink are
+independent, so the robot can gesture while it speaks (validated on hardware 2026-08-12). Designed
+cross-platform, validated on macOS. See [`docs/speak.md`](docs/speak.md) for setup and the
+`clip` / `stream` / `stop` endpoints.
 
 **Hardware-validated (2026-08-12).** Extended live sessions drove the daemon through most of its
 surface: it holds a real BLE link across long runs, holds an LED expression with `carle queue
