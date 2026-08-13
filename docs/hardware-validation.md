@@ -68,14 +68,44 @@ the robot. See [`docs/speak.md`](speak.md).
    curl -X POST http://127.0.0.1:8081/speak/stop
    ```
 
-**Confirm each of these — they are the load-bearing guarantees:**
-- [ ] The clip and the stream actually play **through the robot's speaker**.
-- [ ] Your **host default output is never changed** (AirPods keep playing system audio throughout).
-- [ ] The robot **animates while speaking** (talking LED face code 45 + periodic arm gestures) and
-      **returns to neutral only after playback truly finishes** (not before, not never).
-- [ ] `POST /speak/stop` interrupts playback and returns the robot to neutral.
-- [ ] A second request during playback returns HTTP **409**; an unavailable device returns **503**.
-- [ ] Driving the animation does **not** cut the audio (re-confirms BLE/A2DP independence live).
+**Confirm each of these — they are the load-bearing guarantees:** *(all validated 2026-08-13)*
+- [x] The clip and the stream actually play **through the robot's speaker** — operator heard both
+      (WAV clip via `/speak/clip`; MP3 via `/speak/stream` — note the stream endpoint rejects a
+      raw WAV body with 400 "failed to init decoder"; encoded audio such as MP3 is what it wants).
+- [x] Your **host default output is never changed** — default was `MacBook Pro Speakers` before
+      and after every request. **Caveat found:** macOS had silently made `JT_Speaker` the system
+      default at pairing time; the setup step should say to check and switch it back first.
+- [x] The robot **animates while speaking** (talking LED face + gestures, camera-verified) and
+      **returned to a resting face + arms-down after playback completed**.
+- [x] `POST /speak/stop` interrupted a 22 s stream at the 10 s mark (request returned
+      `outcome: "stopped"`, stop returned `stopped: true`); daemon state clean afterwards.
+- [x] Second request during playback → **409** "busy"; nonexistent device → **503** "refusing to
+      fall back to the host default". GET on `/speak/stop` → 405.
+- [x] `carle queue wave` fired mid-stream at ~5 s; playback was still live at 10 s and audible
+      throughout (re-confirms BLE/A2DP independence).
+
+Neither deferred follow-up (300 s watchdog, lost-stop race) was triggered in these runs; both
+remain open as code follow-ups.
+
+**Stream-format matrix (2026-08-13):** measured first as MP3-only (WAV/FLAC/Vorbis/Opus/AAC
+refused; raw "accepted" but silently played nothing — a zero-frame false pass). The decoder
+was then rebuilt on `av` the same day: all six TTS-relevant containers plus declared raw PCM
+now stream, a zero-frame decode is a 400, and blocks are re-cut to the player's fixed size
+(the first cut played WAV/FLAC sped-up and garbled on the robot — the `StreamPlayer`
+truncates oversized blocks). Unit-tested end to end; details in [`docs/speak.md`](speak.md).
+- [x] **Post-fix hardware listen (2026-08-13):** all seven — MP3, WAV, FLAC, Ogg-Vorbis,
+      Ogg-Opus, ADTS AAC, declared raw PCM — played through the robot's speaker; operator
+      reports each sounded right, every request took ~4.0 s for the ~3.9 s clip, and the host
+      default output stayed on the Mac's own speakers throughout.
+
+**New follow-up (2026-08-13) — power-cycle resilience, TO-DO:** surviving the robot being
+switched off and on must not require restarting anything by hand. Observed on hardware:
+- The **BLE daemon reconnected on its own** after the power cycle (item-D reconnect path,
+  live). Resuming a mid-drive queue across a drop is still untested.
+- The **speak server did not recover**: its PortAudio session goes stale and every request
+  fails `500 PaErrorCode -9986` even once CoreAudio lists `JT_Speaker` again; only a server
+  restart fixed it. Fix: recover in-process — on that error (or on `DeviceUnavailableError`),
+  re-initialize PortAudio and re-resolve the device before failing the request.
 
 **Known follow-ups to watch for during this test** (deferred in PR #16, still open): the
 animation watchdog tears the face down at a fixed 300 s regardless of real playback (fine for
@@ -98,14 +128,19 @@ uv run carle daemon start <address>
 uv run carle status                  # does battery show a real percentage, or unknown?
 ```
 **Confirm:**
-- [ ] Does `carle info` list the battery + version characteristics at all on this unit?
-- [ ] Does `status` report a real battery percentage? If yes, the read path works and the README's
-      "returns empty on the test unit / unverified" caveat can be lifted.
-- [ ] Do the version reads return anything?
+- [x] Does `carle info` list the battery + version characteristics at all on this unit?
+      **No — resolved 2026-08-13.** Full service discovery returned exactly one service: the
+      `AE00` control service (`AE01` write-without-response, `AE02` notify). No battery service
+      `0x180F`, no OTA interface service `0xD0FF`, no version characteristics.
+- [x] Does `status` report a real battery percentage? **No — "battery unknown", which is correct:
+      there is no battery characteristic on this unit to read.** README + protocol-reference
+      caveats updated accordingly.
+- [x] Do the version reads return anything? **They cannot — the characteristics do not exist on
+      this unit.**
 
-Record the finding in the README status table (the "inbound state reads" caveat) and
-`protocol-reference.md`. **Note:** the robot does **not** announce low battery by voice — do not
-re-introduce that claim (it was a fabrication corrected earlier).
+Recorded in the README status table and `protocol-reference.md` (inbound-reads note, 2026-08-13).
+**Note:** the robot does **not** announce low battery by voice — do not re-introduce that claim
+(it was a fabrication corrected earlier).
 
 ---
 
@@ -124,7 +159,9 @@ uv run carle queue pose:5 face:47 gesture:1
 uv run carle status                  # daemon should report disconnected, then reconnect and resume
 ```
 **Confirm the merged fixes hold live:**
-- [ ] Normal driving (moves, poses, faces, gestures) still works with the write timeout in place.
+- [x] Normal driving (moves, poses, faces, gestures) still works with the write timeout in place.
+      **Confirmed 2026-08-13:** `queue wave` (6 steps) and `queue pose:5 face:47 gesture:1`
+      (3 steps) both drained; operator observed the wave, pose 5, and the face-47 smile live.
 - [ ] A real link drop mid-drive does **not** freeze the daemon; it reconnects and the heartbeat resumes.
 
 **Still-open, need hardware to design/validate** (deferred in PR #18 — do NOT "fix" these blind;
@@ -133,6 +170,13 @@ each needs the robot to see the real behavior first):
       pose/move and check the robot **always** walks its joints back to neutral (never leaves a
       joint physically extended). If it ever sticks, the tick/stop lock race is real and needs the
       shared-lock fix validated here.
+      **OBSERVED 2026-08-13 — the race is real.** Five rounds of `queue pose:5` + `stop` at
+      0.3/1/2/0.5/1.5 s into the hold left the left arm physically extended (camera-verified)
+      while the daemon reported `doing nothing; 0 queued`. A follow-up `carle stop` returned `ok`
+      but moved nothing — once the daemon believes it is idle, stop is a no-op and the robot stays
+      desynced. Recovery that worked: `queue gesture:19` (arms-down reset). The fix needs to make
+      stop's return-to-neutral walk un-interruptible by (or serialized with) the tick loop, and is
+      now designable against this observation.
 - [ ] **interrupted-pose resume** — hold a pose (`carle queue pose:N`), drop the link briefly, and
       see whether the pose resumes after reconnect or is silently forgotten (`RECONNECT_BACKOFF`
       1.5 s > `SAFE_HOLD` 0.5 s suggests it is dropped). Correct resume semantics need this
@@ -157,12 +201,23 @@ each needs the robot to see the real behavior first):
 **What:** whether a single `0xB6` frame can drive **multiple joints at once**.
 **Why unverified:** every compound pose so far was built by pulsing one joint at a time; a
 multi-joint single frame was never tried.
-- [ ] Craft a `0xB6` frame setting several joint fields at once (`carle send ... --raw`, daemon
+- [x] Craft a `0xB6` frame setting several joint fields at once (`carle send ... --raw`, daemon
       stopped) and observe whether the robot moves them together or ignores/garbles it.
+      **Answered 2026-08-13 (camera-verified): YES, in one proven form.** `limb=5, byte5=7` in a
+      single frame raises both lateral shoulders together (reproduced ×2); `limb=6, byte5=8`
+      lowers both. Byte 5 is inert alone, reversed, cross-axis, and in the forward/elbow pairs
+      tried. Full observation table in `protocol-reference.md` (byte-5 update). Follow-up: retry
+      the elbow pair `9,11` with a side-on camera, and probe whether waist or movement fields can
+      ride along with a limb code in one frame.
 
 ---
 
 ## F. Song / story / media durations and per-track behavior
+
+**Session note (2026-08-13):** `volume_set` (`0xB3`, level 0) was sent on hardware for the first
+time; it produced **no audible change in the idle-routine sounds**. Open hypothesis (operator's):
+it may govern the A2DP speaker / media playback path rather than the robot's own chirps. Retest
+levels 0/1/2 against `0xB3` media playback specifically when measuring durations below.
 
 **What:** the `0xB3` media library plays songs/stories/dances/gymnastics; the `0xB2` Music tab
 plays melody snippets.
@@ -199,6 +254,9 @@ that halts correctly live.
 **What:** the OTA/DFU update stack (Realtek `RTL8763B`) is documented from the app.
 **Why blocked:** the firmware image lives behind a **geo-fenced vendor server** (`d.ihunuo.com`);
 `tools/fw_probe.py` is the probe. This needs the vendor endpoint reachable and is not routine.
+**New wrinkle (2026-08-13):** the OTA interface service (`0xD0FF`, incl. the `0xFFD1` DFU-reboot
+characteristic) is absent from the dev unit's GATT table over a normal connection (item B), so
+the documented way into DFU mode is itself unconfirmed to exist on this unit.
 - [ ] Only if the endpoint is reachable: probe with `tools/fw_probe.py` and record what the DFU
       surface actually accepts. Treat as research, not a routine validation.
 

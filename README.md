@@ -26,7 +26,7 @@ and speech.
 | Gyro / tilt (`0xB5`) | Decoded from the app |
 | Command encodings | 7 derived from the app; 3 confirmed on hardware |
 | Hardware observations | 28 across 3 commands, backed by 210 committed send logs |
-| Notify characteristic + robot state | Documented — notify is discarded; battery/versions come via reads |
+| Notify characteristic + robot state | Documented — notify is discarded; the battery/version read characteristics the app decodes are absent from the dev unit's GATT table |
 | Audio channel (`JT_Speaker`) | Verified — plays arbitrary host audio |
 | Speak service (`carle speak-server`) | Built and unit-tested; targets the speaker without touching the host default and animates while speaking — end-to-end hardware smoke test still open |
 | Firmware update (OTA/DFU) and chip | Documented from the app (Realtek `RTL8763B`) |
@@ -37,8 +37,9 @@ and speech.
 The movement, sequence and media surfaces have now been read on hardware end to end. What remains
 needs the hardware in ways decompiling can't reach, or the iOS app: the firmware image (behind a
 geo-fenced vendor server); the **inbound state reads** — battery (`0x2A19`) and the version
-characteristics are decoded from the app, but the battery read comes back empty on the test unit,
-so whether the robot actually exposes those read paths still needs checking on hardware; and a
+characteristics are decoded from the app, but a full service discovery on the dev unit
+(2026-08-13) shows the robot exposes **only the control service** — no battery or version
+characteristics exist to read, so `status` reporting battery unknown is the hardware's doing; and a
 handful of fine details the setup couldn't measure (individual song lengths, for one — the robot
 sends no playback signal and the room mic was too far to time them).
 [`docs/hardware-validation.md`](docs/hardware-validation.md) is the running checklist of exactly
@@ -185,10 +186,11 @@ while audio plays** — a `0xB6` frame cuts `0xB2` melodies and `0xB3` media ali
 must go quiet during sound. Still untested: reconnect-resume after a dropped link; whether a single `0xB6` frame can drive
 more than one joint at once (compound poses here were built by pulsing one joint at a time); and
 the **inbound state reads**. Battery (standard characteristic `0x2A19`) and the two version
-characteristics are decoded from the app, but on this test unit the battery read returns nothing,
-so `status` shows the battery as unknown — and whether the robot actually exposes those read paths
-is **unverified and needs checking** (`carle info <address>` would enumerate what it really
-advertises). Confirming the battery and version reads work end to end on hardware is open work.
+characteristics are decoded from the app, but `carle info` against the dev unit (2026-08-13)
+enumerated exactly one service — the `AE00` control service — so **the robot does not expose
+those read paths at all**: `status` correctly shows the battery as unknown because there is no
+battery characteristic to read. See the inbound-reads note in
+[`docs/protocol-reference.md`](docs/protocol-reference.md).
 
 ### macOS: grant Bluetooth permission first
 

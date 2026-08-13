@@ -58,6 +58,16 @@ byte 0-100, and two vendor version characteristics, `0xFFD3` (patch version) and
 answers when asked. These are the only inbound values the app ever consumes, and the battery
 byte is the one a client is most likely to want.
 
+**Live observation (2026-08-13, dev unit `JT_722FBF`): none of these exist on the robot.** A
+full service discovery (`carle info`) over a normal connection returned exactly one service —
+the control service `AE00` with `AE01` (write-without-response) and `AE02` (notify). The
+standard battery service `0x180F` and the OTA interface service
+`0000D0FF-3C17-D293-8E48-14FE2E4DA212` (and with it `0xFFD1`–`0xFFD4`) are absent from the
+GATT table. The reads the app performs cannot succeed against this unit as it presents itself,
+which is consistent with the earlier empty battery read; `carle status` showing the battery as
+unknown is the robot's doing, not a client bug. Whether other firmware revisions expose these
+services, or whether the app tolerates their absence silently, is unknown.
+
 ## Frame format
 
 Every command shares one envelope:
@@ -95,7 +105,7 @@ Movement frames (`0xB6`) carry six payload bytes:
 | 2 | direction, 1-8 |
 | 3 | waist — 1 leans left, 2 returns upright |
 | 4 | limb selector, 1-12 |
-| 5 | no observable effect; see below |
+| 5 | inert alone; drives the matching right-side joint when byte 4 holds the same-axis left lateral code — see below |
 
 Direction runs counter-clockwise from 1 at RIGHT, so 3 is UP, 5 is LEFT and 7 is DOWN, with 0
 meaning no movement. That is the app's own mapping, not an inference from one observation: the
@@ -196,6 +206,18 @@ values, sustained bursts of a single value, alternation between the extremes, an
 minute held down with the idle routine suppressed throughout. That is not proof the byte is
 dead — it may need a mode nothing here sets, or act on something with no outward sign — but
 it is a thorough negative result, and worth recording so the next person does not repeat it.
+
+**2026-08-13 update — the missing mode is byte 4.** Every probe above carried `limb=0`. With
+byte 4 holding a limb code, byte 5 fired in exactly one configuration, reproduced on camera
+across independent trials: `limb=5, byte5=7` raised **both** lateral shoulders in a single
+frame (twice), and `limb=6, byte5=8` lowered both. Byte 5 stayed inert in every other
+pairing tried: alone (`0,7` ×2), reversed (`7,5`), cross-axis (`1,7`), and the forward and
+elbow same-axis pairs (`1,3` / `3,1` / `9,11` / `11,9` — the last two hard to read from a
+front-on camera and worth a re-check from the side). So a single `0xB6` frame **can** drive
+two joints, but the only proven form is byte4 = left lateral code, byte5 = its right-side
+mirror. Whether this is a general (left-channel, right-channel) pair the other axes fail to
+express through weak servos, or a lateral-only firmware special case, is open. Raw send logs
+in `.carle/raw-logs/` (2026-08-13 session).
 
 Gyro frames (`0xB5`) carry five payload bytes and reuse the same primitives from a different
 screen — the tilt-controlled view, which streams a frame every 100 ms driven by phone
@@ -445,7 +467,9 @@ updating its firmware. This is Realtek's DFU stack — the 128-bit UUID base
 `3C17-D293-8E48-14FE2E4DA212` and the opcode set below are that vendor's over-the-air profile,
 and the controller is a Realtek `RTL8763B` (see [Hardware](#hardware)). The whole of the
 following is derived from the decompiled app's `OTAClient` and `OTAUpdate` classes, not from
-hardware; nothing here has been run against a robot.
+hardware; nothing here has been run against a robot. On the dev unit (2026-08-13) the OTA
+interface service does not appear in service discovery over a normal connection at all — see
+the inbound-reads note above — so even the `0xFFD1` way into DFU mode is unconfirmed to exist.
 
 Two services carry it. The **OTA interface** service `0000D0FF-3C17-D293-8E48-14FE2E4DA212`
 sits alongside the control service on the normal connection and exposes readable metadata plus
