@@ -16,6 +16,7 @@ from __future__ import annotations
 import http.client
 import threading
 import time
+from concurrent.futures import TimeoutError as FuturesTimeout
 
 import pytest
 
@@ -116,7 +117,13 @@ class FakeStreamPlayer:
 
 
 class _resolvable:
-    """A tiny Future-like: resolves once, `result(timeout)` blocks until then."""
+    """A tiny Future-like: resolves once, `result(timeout)` blocks until then.
+
+    On timeout it raises `concurrent.futures.TimeoutError` — the same type the real
+    `Future.result(timeout)` raises — so the server's `except FuturesTimeout` catches it.
+    (On Python 3.10 that class is distinct from the builtin `TimeoutError`; conflating them
+    made the stalled-stream fallback path pass on 3.11+ but not 3.10.)
+    """
 
     def __init__(self) -> None:
         self._event = threading.Event()
@@ -129,7 +136,7 @@ class _resolvable:
 
     def result(self, timeout: float | None = None) -> Outcome:
         if not self._event.wait(timeout):
-            raise TimeoutError("stream did not resolve")
+            raise FuturesTimeout("stream did not resolve")
         assert self._value is not None
         return self._value
 
