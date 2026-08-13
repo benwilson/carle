@@ -7,6 +7,8 @@ and animation factories are injected (`build_speak_server`) or monkeypatched (th
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from carle.cli import build_parser, main
@@ -135,7 +137,9 @@ def test_speak_server_parses_device_port_socket_and_builds(monkeypatch, capsys):
     assert code == 0
     assert captured["device_name"] == "MySpeaker"
     assert captured["port"] == 9099
-    assert str(captured["socket_path"]) == "/tmp/s.sock"
+    # Compare as Path objects: argparse's type=Path renders the separator per-OS, so a raw
+    # string compare fails on Windows ('\\tmp\\s.sock'). Both sides normalize equally here.
+    assert captured["socket_path"] == Path("/tmp/s.sock")
     assert captured["animate"] is True
     assert "listening on http://127.0.0.1:8081" in capsys.readouterr().out
 
