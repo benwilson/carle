@@ -113,6 +113,15 @@ class Engine:
         self._face_code: int | None = None
         self._face_frame: bytes | None = None
         self._last_face_sent: bytes | None = None
+        #: When the link went down, or None while connected. While set, ticks execute
+        #: nothing — steps run into a dead link are physically lost (writes are without
+        #: response), which is how a whole queue burned away during a power cycle on
+        #: hardware. On resume every deadline is shifted by the outage.
+        self._paused_at: float | None = None
+        #: How many steps of an in-flight stop() neutral walk remain in the queue. While
+        #: non-zero, another stop() must not truncate the walk — cutting the return
+        #: command's hold short mid-servo-travel is what left an arm physically stuck.
+        self._returning_steps: int = 0
         #: When each joint byte last changed in the emitted stream — the KTD4 rate-limit's
         #: memory, so a joint can never flip faster than the servo-safe minimum regardless
         #: of which track wrote it or how short a step's declared hold is.
@@ -126,23 +135,44 @@ class Engine:
     def clear(self) -> None:
         """Drop pending steps; the current step and in-flight spawns finish (R8)."""
         self._pending.clear()
+        # Any in-flight stop walk was just dropped with the rest of the queue; forgetting
+        # that lets the next stop() build a fresh walk instead of trimming to nothing.
+        self._returning_steps = 0
 
     def stop(self) -> None:
-        """Abort now: kill spawns, then walk every non-neutral joint back (R9, KTD5)."""
+        """Abort now: kill spawns, then walk every non-neutral joint back (R9, KTD5).
+
+        Stops converge instead of racing: while a previous stop's neutral walk is still
+        executing, another stop keeps the walk intact (truncating a return command's hold
+        mid-servo-travel left an arm physically stuck on hardware) and only drops steps
+        queued after it. And because the daemon's picture of the joints can desync from
+        the robot (a truncated walk, a robot-side reboot), every fresh walk ends with the
+        bilateral arms-down gesture — a physical reset that does not depend on
+        `_last_sent` being the truth.
+        """
         for handle in self._spawn_say:
             handle.terminate()
         if self._current_say is not None:
             self._current_say.terminate()
         self._spawn_say.clear()
         self._spawn_movement.clear()
-        self._current = None
         self._current_say = None
         # A held face is part of "what the robot is doing", so an abort clears it too and
         # lets the idle face resume; the next heartbeat is a NOOP rather than the face.
         self._face_code = None
         self._face_frame = None
-        # Replace the queue with a neutral-return sequence for whatever joints are raised.
-        self._pending = deque(self._neutral_return())
+        if self._returning_steps:
+            # A neutral walk is underway: let it finish, drop anything queued behind it.
+            while len(self._pending) > self._returning_steps:
+                self._pending.pop()
+            return
+        self._current = None
+        # Replace the queue with a neutral-return walk for whatever joints are raised,
+        # sealed with the bilateral arms-down gesture (docs/protocol-reference: hand code
+        # 19 brings both arms down together) so a desynced joint still comes home.
+        walk = [*self._neutral_return(), GestureStep(code=19), MovementStep()]
+        self._pending = deque(walk)
+        self._returning_steps = len(walk)
 
     def status(self) -> dict:
         current = type(self._current).__name__ if self._current is not None else None
@@ -176,11 +206,40 @@ class Engine:
 
     async def tick(self) -> None:
         now = self._clock()
+        if not getattr(self._conn, "is_connected", True):
+            # Link down: execute nothing. A step run now would burn into the dead link
+            # (writes are without-response) and be lost — the queue waits for the link.
+            if self._paused_at is None:
+                self._paused_at = now
+                ensure_reconnect = getattr(self._conn, "ensure_reconnect", None)
+                if ensure_reconnect is not None:
+                    ensure_reconnect()
+            return
+        if self._paused_at is not None:
+            self._resume_after_outage(now)
         self._prune_spawns(now)
         media_frames = self._advance(now)
         composed = self._compose()
         guarded = self._guard(composed, now)
         await self._emit(now, guarded, media_frames)
+
+    def _resume_after_outage(self, now: float) -> None:
+        """Shift every deadline by the outage and force a full re-assert of held state.
+
+        The robot may have rebooted during the outage (a power cycle is the common cause),
+        so `_last_sent`/`_last_face_sent` are no longer the truth about what it shows or
+        holds — clearing them makes the next emit re-send the composed target and the held
+        face instead of deduplicating against state the robot lost.
+        """
+        gap = now - self._paused_at
+        self._paused_at = None
+        if self._current is not None:
+            self._current_deadline += gap
+        for track in self._spawn_movement:
+            track.deadline += gap
+        self._last_sent = None
+        self._last_face_sent = None
+        self._last_write = None
 
     def _prune_spawns(self, now: float) -> None:
         self._spawn_movement = [t for t in self._spawn_movement if now < t.deadline]
@@ -200,6 +259,8 @@ class Engine:
 
         while self._pending and (self._current is None or now >= self._current_deadline):
             step = self._pending.popleft()
+            if self._returning_steps:
+                self._returning_steps -= 1
             if isinstance(step, MovementStep):
                 if step.step_mode is StepMode.SPAWN:
                     self._spawn_movement.append(_MovementTrack(step, now + step.hold))

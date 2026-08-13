@@ -177,6 +177,16 @@ class DaemonConnection:
                 return None
             return value[0] if value else None
 
+    def ensure_reconnect(self) -> None:
+        """Public nudge: make sure a reconnect loop is running if the link is down.
+
+        The engine calls this when it pauses on a down link it noticed via
+        `is_connected` — a drop the transport reports before any send fails would
+        otherwise never schedule the background reconnect (only a failed send does).
+        """
+        if not self.is_connected:
+            self._schedule_reconnect()
+
     def _schedule_reconnect(self) -> None:
         """Start a background reconnect loop, unless one is already running or we're closed."""
         if self._closed:

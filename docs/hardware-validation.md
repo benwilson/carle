@@ -98,14 +98,17 @@ truncates oversized blocks). Unit-tested end to end; details in [`docs/speak.md`
       reports each sounded right, every request took ~4.0 s for the ~3.9 s clip, and the host
       default output stayed on the Mac's own speakers throughout.
 
-**New follow-up (2026-08-13) — power-cycle resilience, TO-DO:** surviving the robot being
-switched off and on must not require restarting anything by hand. Observed on hardware:
-- The **BLE daemon reconnected on its own** after the power cycle (item-D reconnect path,
-  live). Resuming a mid-drive queue across a drop is still untested.
-- The **speak server did not recover**: its PortAudio session goes stale and every request
-  fails `500 PaErrorCode -9986` even once CoreAudio lists `JT_Speaker` again; only a server
-  restart fixed it. Fix: recover in-process — on that error (or on `DeviceUnavailableError`),
-  re-initialize PortAudio and re-resolve the device before failing the request.
+**Power-cycle resilience (2026-08-13) — RESOLVED, both halves fixed and validated live:**
+surviving the robot being switched off and on no longer requires restarting anything.
+- The **BLE daemon** reconnects on its own, and the engine now **pauses the queue during an
+  outage and resumes it after reconnect** (deadlines shifted by the outage; held state — the
+  face, a held pose — is re-asserted because the robot may have rebooted). Validated with a
+  mid-queue power cycle: the queue froze at 15 steps for the whole outage, then drained
+  physically after reconnect with the held face intact.
+- The **speak server** recovers in-process: on a stream open/write error the sink rescans
+  PortAudio's device topology (its init-time snapshot is what went stale — `PaErrorCode
+  -9986` forever, previously) and re-resolves the device once before failing. Validated: a
+  server started before the power cycle played a clip right after it, no restart.
 
 **Known follow-ups to watch for during this test** (deferred in PR #16, still open): the
 animation watchdog tears the face down at a fixed 300 s regardless of real playback (fine for
@@ -183,9 +186,14 @@ each needs the robot to see the real behavior first):
       0.3/1/2/0.5/1.5 s into the hold left the left arm physically extended (camera-verified)
       while the daemon reported `doing nothing; 0 queued`. A follow-up `carle stop` returned `ok`
       but moved nothing — once the daemon believes it is idle, stop is a no-op and the robot stays
-      desynced. Recovery that worked: `queue gesture:19` (arms-down reset). The fix needs to make
-      stop's return-to-neutral walk un-interruptible by (or serialized with) the tick loop, and is
-      now designable against this observation.
+      desynced. Recovery that worked: `queue gesture:19` (arms-down reset).
+      **FIXED + validated on hardware later the same day.** The mechanism was not a lock race
+      (the daemon is single-loop asyncio): a second stop truncated the first stop's neutral
+      walk mid-servo-travel and rebuilt it from an already-stale `_last_sent`. Stops now
+      converge — a stop during a walk preserves the walk — and every walk ends with the
+      bilateral arms-down gesture so a desynced joint still comes home (stop is no longer a
+      no-op when the daemon believes it is idle). Three pose + double-stop rounds on hardware:
+      arms fully home each time (camera).
 - [ ] **interrupted-pose resume** — hold a pose (`carle queue pose:N`), drop the link briefly, and
       see whether the pose resumes after reconnect or is silently forgotten (`RECONNECT_BACKOFF`
       1.5 s > `SAFE_HOLD` 0.5 s suggests it is dropped). Correct resume semantics need this

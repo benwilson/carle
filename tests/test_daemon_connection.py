@@ -215,3 +215,32 @@ def test_is_connected_tracks_connect_and_drop():
         await conn.close()
 
     asyncio.run(scenario())
+
+
+def test_ensure_reconnect_revives_a_link_the_transport_dropped_quietly():
+    # A drop the transport reports via is_connected (a robot power cycle) may never fail
+    # a send — the engine pauses first. ensure_reconnect() is the engine's nudge that
+    # must start the background reconnect loop anyway.
+    async def scenario():
+        conn, clients = make_connection()
+        await conn.connect()
+        clients[-1].connected = False  # the transport notices the drop; no send failed
+        assert not conn.is_connected
+
+        conn.ensure_reconnect()
+        assert conn._reconnect_task is not None
+        await conn._reconnect_task
+        assert conn.is_connected
+        assert len(clients) == 2  # a fresh client carried the reconnect
+
+    asyncio.run(scenario())
+
+
+def test_ensure_reconnect_is_a_no_op_while_connected():
+    async def scenario():
+        conn, clients = make_connection()
+        await conn.connect()
+        conn.ensure_reconnect()
+        assert conn._reconnect_task is None  # nothing to do; no loop started
+
+    asyncio.run(scenario())

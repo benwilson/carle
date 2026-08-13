@@ -364,3 +364,49 @@ def test_unbounded_producer_does_not_grow_memory_past_the_bounded_queue():
         player._queue.put_nowait(blk(99))  # a 4th block cannot be buffered
 
     assert player._queue.qsize() == 3  # capped at the bound, regardless of producer speed
+
+
+def test_a_failed_open_recovers_the_sink_and_retries_once():
+    # A power-cycled device leaves PortAudio's snapshot stale: the first open fails
+    # (PaErrorCode -9986 on hardware). start() must ask the sink to rescan, re-resolve,
+    # and open once more — a restart of the whole server must not be the fix.
+    backend = FakeBackend(devices=[out("Stale"), out("JT_Speaker")])
+    opens: list[int] = []
+    refreshes: list[bool] = []
+
+    def failing_then_ok_factory(*, device, **kwargs):
+        opens.append(device)
+        if len(opens) == 1:
+            raise RuntimeError("Internal PortAudio error (simulated -9986)")
+        return backend.stream_factory(device=device, **kwargs)
+
+    def refresh() -> None:
+        refreshes.append(True)
+        backend.devices = [out("Stale"), out("Gone"), out("JT_Speaker")]
+
+    from carle.speak.sink import AudioSink
+
+    sink = AudioSink(
+        "JT_Speaker",
+        query_devices=backend.query_devices,
+        stream_factory=failing_then_ok_factory,
+        refresh_devices=refresh,
+    )
+    player = StreamPlayer(
+        "JT_Speaker",
+        samplerate=44100,
+        channels=2,
+        blocksize=BLOCKSIZE,
+        query_devices=backend.query_devices,
+        stream_factory=failing_then_ok_factory,
+        callback_exceptions=backend.callback_exceptions,
+        sink=sink,
+    )
+    player.finish()
+
+    player.start()
+
+    assert refreshes == [True]
+    assert opens == [1, 2]  # stale index first, the fresh post-rescan index on retry
+    assert backend.stream is not None  # the second open produced the live stream
+    player.stop()

@@ -207,3 +207,56 @@ def test_stream_error_then_device_gone_surfaces_device_unavailable():
 
     with pytest.raises(DeviceUnavailableError):
         sink.play(object(), samplerate=44100, channels=2)
+
+
+# --- power-cycle recovery (hardware finding 2026-08-13) -------------------------------
+
+
+def test_a_stream_error_rescans_the_device_topology_before_re_resolving():
+    # On hardware, a power-cycled robot re-registers its speaker with CoreAudio, but
+    # PortAudio keeps serving its stale init-time snapshot: re-resolving against it finds
+    # the dead entry and every open fails (PaErrorCode -9986) until the topology is
+    # rescanned. The recovery path must refresh BEFORE re-resolving.
+    audio = FakeAudio([out("BuiltIn"), out("JT_Speaker")], fail_writes=True)
+    refreshes = []
+
+    def refresh() -> None:
+        refreshes.append(True)
+        # The rescan is what surfaces the device's fresh registration (a new index).
+        audio.devices = [out("BuiltIn"), out("Other"), out("JT_Speaker")]
+        audio.fail_writes = False
+
+    sink = AudioSink(
+        "JT_Speaker",
+        query_devices=audio.query_devices,
+        stream_factory=audio.stream_factory,
+        refresh_devices=refresh,
+    )
+    buffer = object()
+
+    sink.play(buffer, samplerate=44100, channels=2)
+
+    assert refreshes == [True]  # exactly one rescan
+    assert audio.streams[0].device == 1  # first open: the stale index
+    assert audio.streams[1].device == 2  # replay: the fresh post-rescan index
+    assert audio.streams[1].written == [buffer]
+
+
+def test_a_failed_rescan_still_fails_loudly_on_the_resolve():
+    # The rescan itself may throw (PortAudio in a broken state). That must not mask the
+    # real signal: with the device truly gone, the re-resolve raises DeviceUnavailable.
+    audio = FakeAudio([out("JT_Speaker")], fail_writes=True)
+
+    def refresh() -> None:
+        audio.devices = [out("BuiltIn")]  # the target is gone after the rescan
+        raise RuntimeError("portaudio re-init failed")
+
+    sink = AudioSink(
+        "JT_Speaker",
+        query_devices=audio.query_devices,
+        stream_factory=audio.stream_factory,
+        refresh_devices=refresh,
+    )
+
+    with pytest.raises(DeviceUnavailableError):
+        sink.play(object(), samplerate=44100, channels=2)

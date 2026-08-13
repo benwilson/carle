@@ -376,3 +376,154 @@ def test_macro_enqueue_expands_and_executes():
         assert seen.index(5) < seen.index(6)
 
     asyncio.run(scenario())
+
+
+# --- link-outage pause/resume (hardware finding 2026-08-13) ---------------------------
+
+
+def test_queue_pauses_while_disconnected_and_resumes_after_reconnect():
+    # On hardware, a mid-queue power cycle burned the whole queue into the dead link
+    # (writes are without-response): steps "ran" while disconnected and nothing remained
+    # to resume. The queue must wait out the outage instead.
+    async def scenario():
+        engine, conn, clock = make_engine()
+        engine.enqueue([pose(1, hold=1.0), pose(3, hold=1.0)])
+        await engine.tick()  # t=0: pose 1 becomes current and is sent
+        assert limbs(conn.sent)[-1] == 1
+        sent_before = len(conn.sent)
+
+        conn.is_connected = False  # the transport notices the drop; no send has failed
+        for _ in range(30):  # a 3 s outage
+            clock.advance(0.1)
+            await engine.tick()
+        assert len(conn.sent) == sent_before  # nothing executed into the dead link
+        assert engine.status()["pending"] == 1  # pose 3 still queued, not burned
+
+        conn.is_connected = True
+        clock.advance(0.1)
+        await engine.tick()
+        # The outage shifted the hold deadline: pose 1 is still current — not expired by
+        # wall clock — and is re-sent because the robot may have rebooted mid-outage.
+        assert engine.status()["current"] == "MovementStep"
+        assert limbs(conn.sent)[-1] == 1
+
+    asyncio.run(scenario())
+
+
+def test_pausing_on_a_noticed_drop_nudges_the_reconnect_loop():
+    # Only a FAILED SEND used to schedule the background reconnect. A drop noticed via
+    # is_connected while the engine is quiet must nudge the reconnect loop itself.
+    async def scenario():
+        class NudgingConn(FakeConn):
+            def __init__(self) -> None:
+                super().__init__()
+                self.nudges = 0
+
+            def ensure_reconnect(self) -> None:
+                self.nudges += 1
+
+        clock = Clock()
+        conn = NudgingConn()
+        engine = Engine(conn, clock=clock.now, tts=FakeTts())
+        conn.is_connected = False
+        await engine.tick()
+        assert conn.nudges == 1
+        clock.advance(0.1)
+        await engine.tick()  # staying paused does not re-nudge; the loop retries itself
+        assert conn.nudges == 1
+
+    asyncio.run(scenario())
+
+
+def test_held_face_is_reasserted_after_an_outage():
+    # A power cycle resets the robot's display while the daemon still "holds" a face.
+    # After reconnect the held face must be re-sent, not deduplicated against state the
+    # robot lost.
+    async def scenario():
+        engine, conn, clock = make_engine()
+        face_frame = frame.build(0xB2, [39])
+        engine.enqueue([face(39)])
+        await engine.tick()
+        clock.advance(0.1)
+        await engine.tick()
+        assert face_frame in conn.sent
+
+        conn.is_connected = False
+        clock.advance(1.0)
+        await engine.tick()  # paused
+        conn.is_connected = True
+        clock.advance(0.1)
+        await engine.tick()  # re-asserts the movement target first
+        sent_after_reconnect = len(conn.sent)
+        clock.advance(0.1)
+        await engine.tick()  # then the held face goes out again at once
+        assert conn.sent[sent_after_reconnect:].count(face_frame) == 1
+
+    asyncio.run(scenario())
+
+
+# --- converging stop (hardware finding 2026-08-13: the stuck-arm truncation) ----------
+
+
+def test_a_second_stop_does_not_truncate_the_neutral_walk():
+    # Repeated stops during a held pose left the arm physically extended on hardware: a
+    # later stop cleared the in-flight return command mid-servo-travel. A stop during a
+    # stop's walk must let the walk finish.
+    async def scenario():
+        engine, conn, clock = make_engine()
+        engine.enqueue([pose(5, hold=10.0)])
+        await engine.tick()
+        assert limbs(conn.sent)[-1] == 5
+
+        engine.stop()
+        clock.advance(0.6)
+        await engine.tick()  # the walk's limb-6 return becomes current and is sent
+        assert limbs(conn.sent)[-1] == 6
+        engine.stop()  # a second stop mid-walk
+        assert engine.status()["current"] == "MovementStep"  # return hold NOT truncated
+
+        for _ in range(30):
+            clock.advance(0.2)
+            await engine.tick()
+        movement = [f for f in conn.sent if frame.parse(f)[0] == 0xB6]
+        assert limbs(movement)[-1] == 0  # the walk ended at the all-zero target
+        gestures = [f for f in conn.sent if frame.parse(f)[0] == 0xB2]
+        assert len(gestures) == 1  # one bilateral arms-down reset — not one per stop
+
+    asyncio.run(scenario())
+
+
+def test_stop_when_idle_still_resets_the_body():
+    # On hardware the daemon's picture of the joints desynced from the robot ("doing
+    # nothing" while an arm stood extended), and stop no-opped off _last_sent. A stop must
+    # bring the body home even when the daemon believes there is nothing to undo.
+    async def scenario():
+        engine, conn, clock = make_engine()
+        await engine.tick()  # idle baseline
+        engine.stop()
+        for _ in range(10):  # walk through the all-zero hold to the gesture
+            clock.advance(0.2)
+            await engine.tick()
+        arms_down = [f for f in conn.sent if frame.parse(f)[0] == 0xB2]
+        assert len(arms_down) == 1
+
+    asyncio.run(scenario())
+
+
+def test_stop_drops_steps_queued_behind_an_active_walk():
+    async def scenario():
+        engine, conn, clock = make_engine()
+        engine.enqueue([pose(5, hold=10.0)])
+        await engine.tick()
+        engine.stop()
+        clock.advance(0.6)
+        await engine.tick()  # walk underway
+        engine.enqueue([pose(1, hold=1.0)])  # queued behind the walk
+        engine.stop()  # keeps the walk, drops the pose queued after it
+        for _ in range(30):
+            clock.advance(0.2)
+            await engine.tick()
+        movement = [f for f in conn.sent if frame.parse(f)[0] == 0xB6]
+        assert 1 not in limbs(movement)
+
+    asyncio.run(scenario())

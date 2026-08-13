@@ -62,6 +62,22 @@ def default_query_devices() -> Sequence[DeviceRecord]:
     return sounddevice.query_devices()
 
 
+def default_refresh_devices() -> None:
+    """Rescan PortAudio's device topology. Imports `sounddevice` lazily (KTD9).
+
+    PortAudio snapshots the device list at initialization. A Bluetooth device that
+    vanished and re-registered — the robot being power-cycled is the concrete case,
+    observed on hardware — keeps its stale, dead entry in that snapshot, so every open
+    against it fails (`PaErrorCode -9986`) even after CoreAudio lists the device again.
+    `sounddevice`'s `_terminate`/`_initialize` pair is the library's own re-enumeration
+    path (it exposes no public one).
+    """
+    import sounddevice  # noqa: PLC0415 - lazy so the module imports without the extra
+
+    sounddevice._terminate()  # noqa: SLF001 - the library's documented re-scan idiom
+    sounddevice._initialize()  # noqa: SLF001
+
+
 def default_stream_factory(
     *, device: int, samplerate: int, channels: int, dtype: str
 ) -> OutputStream:
@@ -86,13 +102,30 @@ class AudioSink:
         *,
         query_devices: Callable[[], Sequence[DeviceRecord]] = default_query_devices,
         stream_factory: Callable[..., OutputStream] = default_stream_factory,
+        refresh_devices: Callable[[], None] = default_refresh_devices,
     ) -> None:
         self._device_name = device_name
         self._query_devices = query_devices
         self._stream_factory = stream_factory
+        self._refresh_devices = refresh_devices
         #: The resolved PortAudio index, cached after the first lookup and invalidated on
         #: a stream error so a reconnected device is re-resolved (KTD1).
         self._index: int | None = None
+
+    def recover(self) -> None:
+        """Drop the cached index and rescan the device topology.
+
+        Called after a stream open/write error: re-resolving against PortAudio's original
+        snapshot is not enough when the device re-registered (a power cycle) — the
+        snapshot itself holds the dead entry, so it must be rebuilt first. A failure in
+        the rescan is swallowed; the subsequent resolve fails loudly on its own if the
+        device is truly gone.
+        """
+        self._index = None
+        try:
+            self._refresh_devices()
+        except Exception:  # noqa: BLE001 - resolve() is the loud failure path, not this
+            pass
 
     @property
     def device_name(self) -> str:
@@ -128,10 +161,11 @@ class AudioSink:
     ) -> None:
         """Play a decoded PCM buffer to the target device via a blocking write (KTD3).
 
-        On a stream error the cached index is dropped and re-resolved once — a Bluetooth
-        reconnect can hand the same device a new index. If it re-resolves, the clip is
-        replayed; if the device is gone, the re-resolve raises `DeviceUnavailableError`,
-        and a second stream error surfaces to the caller.
+        On a stream error the device topology is rescanned and the index re-resolved once
+        (`recover`) — a Bluetooth device that dropped, or was power-cycled and
+        re-registered, comes back under a fresh PortAudio entry. If it re-resolves, the
+        clip is replayed; if the device is gone, the re-resolve raises
+        `DeviceUnavailableError`, and a second stream error surfaces to the caller.
         """
         index = self.resolve()
         try:
@@ -140,8 +174,8 @@ class AudioSink:
         except DeviceUnavailableError:
             raise
         except Exception:
-            # A stream error may mean the Bluetooth device reconnected under a new index.
-            self._index = None
+            # A stream error may mean the device re-registered: rescan, then re-resolve.
+            self.recover()
         index = self.resolve()  # raises DeviceUnavailableError if the device is truly gone
         self._write_clip(index, pcm, samplerate=samplerate, channels=channels, dtype=dtype)
 

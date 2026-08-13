@@ -46,6 +46,7 @@ from carle.speak.sink import (
     DEFAULT_DTYPE,
     AudioSink,
     DeviceRecord,
+    DeviceUnavailableError,
     default_query_devices,
 )
 
@@ -269,20 +270,24 @@ class StreamPlayer:
         before any stream is opened (no fallback to the host default). Pre-roll waits until
         a few blocks are queued (or the source finished, or the timeout elapses) so the
         first callbacks do not immediately underflow.
+
+        An open error gets one recovery pass: the sink rescans PortAudio's device topology
+        and re-resolves before a second open. Without the rescan, a device that vanished
+        and re-registered (the robot power-cycled) fails every open against the stale
+        snapshot forever — `PaErrorCode -9986` on hardware until the server was restarted.
         """
         index = self._sink.resolve()
         self._stop_exc, self._abort_exc = self._callback_exceptions()
         if self._preroll_blocks > 0:
             self._preroll_ready.wait(self._preroll_timeout)
-        stream = self._stream_factory(
-            device=index,
-            samplerate=self._samplerate,
-            channels=self._channels,
-            dtype=self._dtype,
-            blocksize=self._blocksize,
-            callback=self._callback,
-            finished_callback=self._finished,
-        )
+        try:
+            stream = self._open_stream(index)
+        except DeviceUnavailableError:
+            raise
+        except Exception:
+            self._sink.recover()
+            index = self._sink.resolve()  # raises DeviceUnavailableError if truly gone
+            stream = self._open_stream(index)
         # Publish the stream under the lock and honour a stop that raced this setup: if
         # `stop()` already ran, do NOT start a stream it will never tear down (an orphaned,
         # unmonitored device stream that also holds the playback lock). Resolve instead.
@@ -297,6 +302,17 @@ class StreamPlayer:
                 self._finished()
             return
         stream.start()
+
+    def _open_stream(self, index: int):
+        return self._stream_factory(
+            device=index,
+            samplerate=self._samplerate,
+            channels=self._channels,
+            dtype=self._dtype,
+            blocksize=self._blocksize,
+            callback=self._callback,
+            finished_callback=self._finished,
+        )
 
     def stop(self) -> None:
         """Tear down early: stop and close the stream, drain the queue, resolve STOPPED.
