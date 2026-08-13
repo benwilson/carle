@@ -58,6 +58,12 @@ DEFAULT_INTERVAL = 2.0
 DEFAULT_WATCHDOG = 300.0
 #: How long teardown waits for the gesture thread to unwind before enqueuing neutral.
 _JOIN_TIMEOUT = 5.0
+#: Bound on each daemon call. on_start runs on the HTTP worker thread while it holds the
+#: playback lock, so an un-timed call to a hung daemon would wedge the whole speak server.
+DEFAULT_DAEMON_TIMEOUT = 5.0
+#: How many times the neutral return is retried so a single transient daemon blip at
+#: teardown does not leave the robot holding the talking face (R7).
+_NEUTRAL_ATTEMPTS = 3
 
 #: The injected daemon-request callable: takes one request object, returns the response.
 RequestFn = Callable[[dict], object]
@@ -87,11 +93,14 @@ class RobotAnimation:
         watchdog: float = DEFAULT_WATCHDOG,
     ) -> None:
         if request is None:
-            request = (
-                client.request
-                if socket_path is None
-                else functools.partial(client.request, socket_path=socket_path)
-            )
+            # Bind a per-call timeout so a hung daemon can never wedge on_start (which runs
+            # under the server's playback lock). An injected request (tests) is used as-is.
+            if socket_path is None:
+                request = functools.partial(client.request, timeout=DEFAULT_DAEMON_TIMEOUT)
+            else:
+                request = functools.partial(
+                    client.request, socket_path=socket_path, timeout=DEFAULT_DAEMON_TIMEOUT
+                )
         self._request = request
         self._face_code = face_code
         self._gestures = tuple(gestures)
@@ -179,8 +188,17 @@ class RobotAnimation:
         if thread is not None and thread is not threading.current_thread():
             thread.join(_JOIN_TIMEOUT)
         # Enqueue neutral only after the gesture loop is stopped, so no late pulse can
-        # override the neutral pose. Failure here is logged, never raised.
-        self._enqueue([{"face": self._neutral_face}, {"gesture": self._neutral_gesture}])
+        # override the neutral pose. Retry a few times so a single transient daemon blip at
+        # teardown does not silently leave the robot holding the talking face (R7). Every
+        # attempt is best-effort — a truly-down daemon still degrades to a logged skip.
+        neutral = [{"face": self._neutral_face}, {"gesture": self._neutral_gesture}]
+        for _ in range(_NEUTRAL_ATTEMPTS):
+            if self._enqueue(neutral):
+                return
+        _log.warning(
+            "speak animation could not return the robot to neutral after %d attempts",
+            _NEUTRAL_ATTEMPTS,
+        )
 
     def _enqueue(self, items: list[dict]) -> bool:
         """Send one enqueue request to the daemon; return False (and log) on any failure.

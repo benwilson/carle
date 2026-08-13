@@ -77,6 +77,11 @@ _READ_SIZE = 65536
 DEFAULT_STREAM_TIMEOUT = 300.0
 #: How long to wait for the producer thread to unwind after playback ends.
 _JOIN_TIMEOUT = 5.0
+#: The `/speak/clip` endpoint buffers the whole body before decoding, so it is capped to
+#: keep a huge (or unbounded chunked) request from exhausting memory. 64 MiB is far larger
+#: than any spoken clip; a longer utterance should use the streaming endpoint. Live streams
+#: are never buffered whole, so `/speak/stream` needs no equivalent cap.
+MAX_CLIP_BYTES = 64 * 1024 * 1024
 
 
 # --- injectable seams -----------------------------------------------------------------
@@ -359,6 +364,14 @@ class SpeakService:
             player.stop()
             producer.join(_JOIN_TIMEOUT)
             return _err(503, str(exc))
+        except Exception as exc:  # noqa: BLE001 - any other start fault must still tear down
+            # Not just DeviceUnavailableError: a PortAudioError (or any backend fault) at
+            # start must also stop the player and drain the queue, or the producer thread
+            # blocks forever on a full queue and leaks. on_start has not run yet, so no
+            # on_end is owed here.
+            player.stop()
+            producer.join(_JOIN_TIMEOUT)
+            return _err(500, f"stream playback failed to start: {exc}")
         self._animation.on_start()
         outcome = self._await_stream(player)
         producer.join(_JOIN_TIMEOUT)
@@ -367,6 +380,10 @@ class SpeakService:
             return _err(
                 400, f"could not decode audio stream: {errors['decode']}", outcome=outcome.value
             )
+        if "error" in errors:
+            # A non-decode producer fault (e.g. a resample/backend error) tore the stream
+            # down; surface it as a 500 rather than reporting a false 200 success.
+            return _err(500, f"audio stream failed: {errors['error']}", outcome=outcome.value)
         return _ok(outcome=outcome.value)
 
     def _await_stream(self, player: StreamLike) -> Outcome:
@@ -455,9 +472,12 @@ class SpeakRequestHandler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query)
         try:
             if path == "/speak/clip":
-                resp = self._service.handle_clip(
-                    self._read_body(), params=params, headers=self.headers
-                )
+                body = self._read_body(max_bytes=MAX_CLIP_BYTES)
+                if body is None:
+                    self.close_connection = True  # body unread: don't reuse this connection
+                    resp = _err(413, f"clip body exceeds the {MAX_CLIP_BYTES}-byte limit")
+                else:
+                    resp = self._service.handle_clip(body, params=params, headers=self.headers)
             elif path == "/speak/stream":
                 resp = self._service.handle_stream(
                     self._iter_body(), params=params, headers=self.headers
@@ -513,8 +533,21 @@ class SpeakRequestHandler(BaseHTTPRequestHandler):
                 yield chunk
             self.rfile.readline()  # the CRLF that follows the chunk data
 
-    def _read_body(self) -> bytes:
-        return b"".join(self._iter_body())
+    def _read_body(self, max_bytes: int | None = None) -> bytes | None:
+        """Buffer the whole request body, or return None if it exceeds ``max_bytes``.
+
+        Enforced on the accumulated bytes, not a declared ``Content-Length``, so a chunked
+        or length-lying request cannot slip past the cap. Returns None the moment the limit
+        is crossed rather than reading the rest, so an oversized body is never fully buffered.
+        """
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in self._iter_body():
+            total += len(chunk)
+            if max_bytes is not None and total > max_bytes:
+                return None
+            chunks.append(chunk)
+        return b"".join(chunks)
 
     def _drain_body(self) -> None:
         for _ in self._iter_body():

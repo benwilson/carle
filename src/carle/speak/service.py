@@ -7,11 +7,13 @@ of `cli.py` so the wiring is unit-testable without argparse: the service, server
 animation factories are all injected, so a test passes fakes and asserts the device
 name, daemon socket, and port thread through to the right component.
 
-No audio backend is imported here. Importing `carle.speak` builds nothing heavy — the
-`sounddevice`/PortAudio backends load lazily inside the sink and stream factories only
-when a real playback runs (KTD9) — so importing this module never requires the
-``carle[speak]`` extra. The missing-extra failure surfaces later, when the server first
-builds its components; `cli.py`'s `_run_speak_server` catches it and reports cleanly.
+No audio backend is imported at module load. Importing `carle.speak` builds nothing heavy
+— the `sounddevice`/PortAudio backends load lazily inside the sink and stream factories
+only when a real playback runs (KTD9) — so importing this module never requires the
+``carle[speak]`` extra. Because of that laziness, building and starting the server would
+otherwise *succeed* without the extra and only fault on the first request; `carle
+speak-server` calls `require_speak_backends()` at startup to turn that into a clean CLI
+error instead.
 """
 
 from __future__ import annotations
@@ -25,6 +27,20 @@ from carle.speak.server import SpeakServer, SpeakService
 
 if TYPE_CHECKING:
     from carle.speak.server import AnimationHook
+
+
+def require_speak_backends() -> None:
+    """Import the audio backends eagerly so a missing ``carle[speak]`` extra fails fast.
+
+    The backends are otherwise lazy-imported deep inside playback (KTD9), so without this
+    probe a lean install would print "speak server listening ..." and only fault as an
+    opaque HTTP 500 on the first real request. Calling this once at `speak-server` startup
+    raises `ImportError` up front, which `cli.py` turns into the one-line install hint.
+    """
+    import miniaudio  # noqa: F401, PLC0415 - eager probe; lazy everywhere else (KTD9)
+    import sounddevice  # noqa: F401, PLC0415
+    import soundfile  # noqa: F401, PLC0415
+    import soxr  # noqa: F401, PLC0415
 
 
 def build_speak_server(

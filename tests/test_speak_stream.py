@@ -237,6 +237,62 @@ def test_full_queue_blocks_the_producer_as_backpressure():
     thread.join(1)
 
 
+def test_stop_releases_a_producer_blocked_on_a_full_queue():
+    # The wedge that a real Bluetooth drop triggers: a producer blocked on a full queue must
+    # be released when the player stops, or the producer thread leaks forever.
+    backend = FakeBackend()
+    player = make_player(backend, max_blocks=1)
+    player.enqueue(blk(0))  # queue now full
+
+    entered = threading.Event()
+    returned = threading.Event()
+
+    def produce() -> None:
+        entered.set()
+        player.enqueue(blk(1))  # blocks: the queue is full and nothing consumes it
+        returned.set()
+
+    thread = threading.Thread(target=produce)
+    thread.start()
+    entered.wait(1)
+    assert not returned.wait(0.2)  # genuinely blocked on backpressure
+
+    player.stop()  # a stop with no consumer must still release the blocked producer
+    assert returned.wait(1)  # released within the poll interval, not wedged forever
+    thread.join(1)
+    assert player.done.done()
+    assert player.wait() == Outcome.STOPPED
+
+
+def test_enqueue_after_stop_drops_the_block_without_blocking():
+    # Once the player is done, enqueue must not block on a full queue (nothing will drain it)
+    # — it drops the late block instead of leaking the producer.
+    backend = FakeBackend()
+    player = make_player(backend, max_blocks=1)
+    player.stop()
+
+    player.enqueue(blk(0))  # returns immediately despite capacity 1 and no consumer
+    player.enqueue(blk(1))
+    assert player._queue.qsize() == 0  # nothing buffered for a consumer that never runs
+
+
+def test_stop_before_start_never_opens_an_orphan_device_stream():
+    # A /speak/stop landing between arm and start: start must see the stop and refuse to open
+    # a stream nothing would tear down, rather than leave an unmonitored device stream running.
+    backend = FakeBackend()
+    player = make_player(backend)
+    player.stop()  # stop wins the race, before start
+
+    player.start()
+
+    stream = backend.stream
+    if stream is not None:  # start may have built the object, but must not have run it
+        assert stream.started is False
+        assert stream.closed is True
+    assert player.done.done()
+    assert player.wait() == Outcome.STOPPED
+
+
 def test_stop_mid_stream_drains_closes_and_fires_the_terminal_signal():
     player, stream = start_player(blocks=[blk(0), blk(1)])
     stream.pump()  # play one block, then stop with a block still queued

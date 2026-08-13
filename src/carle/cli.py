@@ -722,14 +722,20 @@ def _run_speak_server(args: argparse.Namespace) -> int:
     """Start the loopback speak server, degrading cleanly with no `carle[speak]` extra.
 
     The speak modules are imported here, lazily, so a lean install still runs every other
-    verb. This catches the case where importing the speak package fails for a missing
-    audio backend and reports it as one line, exit 1, instead of a traceback. Once the
-    server is running, a per-request playback failure surfaces to the HTTP client, not
-    here — the accept loop keeps serving.
+    verb. `require_speak_backends()` probes the audio backends up front — they are lazy
+    everywhere else (KTD9), so without the probe a lean install would print "listening ..."
+    and only fault on the first request — and a missing extra becomes a one-line install
+    hint, exit 1. A bind failure (e.g. the port is already in use) is reported the same way
+    rather than as a raw traceback.
     """
     try:
-        from carle.speak.service import build_speak_server, run_speak_server
+        from carle.speak.service import (
+            build_speak_server,
+            require_speak_backends,
+            run_speak_server,
+        )
 
+        require_speak_backends()
         server = build_speak_server(
             device_name=args.device,
             port=args.port,
@@ -741,6 +747,9 @@ def _run_speak_server(args: argparse.Namespace) -> int:
         run_speak_server(server)
     except ImportError:
         print(SPEAK_EXTRA_HELP, file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"error: could not start the speak server: {exc}", file=sys.stderr)
         return 1
     return 0
 

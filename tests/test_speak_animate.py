@@ -146,3 +146,44 @@ def test_watchdog_and_on_end_are_idempotent_together():
 
     assert client.faces().count(NEUTRAL_FACE) == 1
     assert client.gestures().count(NEUTRAL_GESTURE) == 1
+
+
+class FlakyNeutralClient:
+    """Succeeds for everything except the first N neutral-return enqueues, which raise."""
+
+    def __init__(self, *, fail_neutral_times: int = 0) -> None:
+        self._lock = threading.Lock()
+        self.requests: list[dict] = []
+        self._fail_neutral = fail_neutral_times
+
+    def request(self, obj: dict) -> dict:
+        items = obj.get("items", [])
+        is_neutral = any(item.get("face") == NEUTRAL_FACE for item in items)
+        with self._lock:
+            if is_neutral and self._fail_neutral > 0:
+                self._fail_neutral -= 1
+                raise ConnectionError("transient daemon blip at teardown")
+            self.requests.append(obj)
+        return {"ok": True}
+
+    def neutral_returns(self) -> int:
+        with self._lock:
+            return sum(
+                1
+                for req in self.requests
+                for item in req.get("items", [])
+                if item.get("face") == NEUTRAL_FACE
+            )
+
+
+def test_neutral_return_is_retried_after_a_transient_daemon_blip():
+    # R7: a single transient daemon failure at teardown must not permanently leave the robot
+    # holding the talking face — the neutral return is retried until it lands.
+    client = FlakyNeutralClient(fail_neutral_times=1)
+    # A long interval keeps the gesture loop from firing during this short test.
+    anim = RobotAnimation(request=client.request, interval=30.0, watchdog=30.0)
+
+    anim.on_start()
+    anim.on_end(Outcome.COMPLETED)
+
+    assert client.neutral_returns() >= 1  # neutral landed despite the first failure

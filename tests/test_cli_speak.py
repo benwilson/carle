@@ -125,6 +125,7 @@ def test_speak_server_parses_device_port_socket_and_builds(monkeypatch, capsys):
         captured.update(kwargs)
         return ServingServer()
 
+    monkeypatch.setattr("carle.speak.service.require_speak_backends", lambda: None)
     monkeypatch.setattr("carle.speak.service.build_speak_server", fake_build)
 
     code = main(
@@ -146,6 +147,7 @@ def test_speak_server_no_animate_disables_animation(monkeypatch):
         captured.update(kwargs)
         return ServingServer()
 
+    monkeypatch.setattr("carle.speak.service.require_speak_backends", lambda: None)
     monkeypatch.setattr("carle.speak.service.build_speak_server", fake_build)
 
     code = main(["speak-server", "--no-animate"])
@@ -157,6 +159,7 @@ def test_speak_server_no_animate_disables_animation(monkeypatch):
 
 def test_speak_server_shuts_down_and_closes_on_interrupt(monkeypatch):
     served = ServingServer()
+    monkeypatch.setattr("carle.speak.service.require_speak_backends", lambda: None)
     monkeypatch.setattr("carle.speak.service.build_speak_server", lambda **_: served)
 
     assert main(["speak-server"]) == 0
@@ -178,6 +181,45 @@ def test_missing_audio_extra_reports_install_hint(monkeypatch, capsys):
     assert code == 1
     err = capsys.readouterr().err
     assert "pip install 'carle[speak]'" in err
+    assert "Traceback" not in err
+
+
+def test_missing_backends_probe_reports_install_hint(monkeypatch, capsys):
+    # The real degradation path: the audio backends are lazy everywhere else, so the startup
+    # probe is what actually detects a missing extra. If it raises ImportError, the CLI must
+    # print the one-line hint and exit 1 — not start the server and fail on the first request.
+    def boom():
+        raise ImportError("No module named 'sounddevice'")
+
+    monkeypatch.setattr("carle.speak.service.require_speak_backends", boom)
+    # If the probe short-circuits correctly, build is never reached.
+    monkeypatch.setattr(
+        "carle.speak.service.build_speak_server",
+        lambda **_: pytest.fail("build must not run when the backends are missing"),
+    )
+
+    code = main(["speak-server"])
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "pip install 'carle[speak]'" in err
+    assert "Traceback" not in err
+
+
+def test_port_in_use_reports_a_clean_error_not_a_traceback(monkeypatch, capsys):
+    monkeypatch.setattr("carle.speak.service.require_speak_backends", lambda: None)
+
+    def boom(**_kwargs):
+        raise OSError("[Errno 48] Address already in use")
+
+    monkeypatch.setattr("carle.speak.service.build_speak_server", boom)
+
+    code = main(["speak-server"])
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "could not start the speak server" in err
+    assert "Address already in use" in err
     assert "Traceback" not in err
 
 

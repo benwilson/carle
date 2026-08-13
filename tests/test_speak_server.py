@@ -75,17 +75,20 @@ class FakeClipPlayer:
 class FakeStreamPlayer:
     """A stream player whose done-signal resolves on finish (COMPLETED) or stop (STOPPED)."""
 
-    def __init__(self, *, unavailable: bool = False) -> None:
+    def __init__(self, *, unavailable: bool = False, start_error: Exception | None = None) -> None:
         self.enqueued: list[object] = []
         self.started = False
         self.finished = False
         self.stopped = False
         self._unavailable = unavailable
+        self._start_error = start_error
         self._done: Future = _resolvable()
 
     def start(self) -> None:
         if self._unavailable:
             raise DeviceUnavailableError("output device 'JT_Speaker' is not a connected output")
+        if self._start_error is not None:
+            raise self._start_error
         self.started = True
 
     def enqueue(self, block: object) -> None:
@@ -293,6 +296,40 @@ def test_stream_decode_error_is_a_400():
 
     assert resp.status == 400
     assert player.stopped is True  # the player was torn down on the decode failure
+
+
+def test_stream_non_decode_producer_error_is_a_500_not_a_false_success():
+    # A producer fault that is NOT a DecodeError (e.g. a resample/backend error) must not be
+    # swallowed into a 200 — the error key is written and surfaced as a 500.
+    player = FakeStreamPlayer()
+
+    def boom(chunks, *, source_format=None):
+        yield from ()
+        raise RuntimeError("resampler blew up")
+
+    service = SpeakService(stream_factory=lambda: player, stream_decode=boom)
+
+    resp = service.handle_stream(iter([b"bad"]))
+
+    assert resp.status == 500
+    assert resp.body["ok"] is False
+    assert player.stopped is True  # the player was torn down on the producer failure
+
+
+def test_stream_start_failure_other_than_unavailable_is_500_and_cleans_up():
+    # player.start() raising something other than DeviceUnavailableError must still stop the
+    # player and join the producer — never leak the producer thread on a full queue.
+    player = FakeStreamPlayer(start_error=RuntimeError("PortAudio init failed"))
+    anim = FakeAnimation()
+    service = SpeakService(
+        stream_factory=lambda: player, stream_decode=fake_stream_decode, animation=anim
+    )
+
+    resp = service.handle_stream(iter([b"a", b"b"]))
+
+    assert resp.status == 500
+    assert player.stopped is True  # cleaned up despite the non-DeviceUnavailable fault
+    assert anim.starts == 0  # animation never began (start failed before on_start)
 
 
 # --- real loopback HTTP server tests --------------------------------------------------

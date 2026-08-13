@@ -116,6 +116,42 @@ def test_plays_the_buffer_to_the_resolved_index_and_never_sets_the_default():
     assert audio.default_device is None
 
 
+def test_real_default_factory_binds_the_index_and_never_sets_the_host_default(monkeypatch):
+    # The R5 guarantee actually lives in `default_stream_factory` / `default_query_devices`,
+    # which the FakeAudio-injected tests bypass. Drive them against a fake `sounddevice`
+    # module whose `default` records every assignment, so a regression that steered the
+    # host default (`sounddevice.default.device = ...`) would fail here rather than pass
+    # vacuously.
+    import sys
+    import types
+
+    class RecordingDefault:
+        def __init__(self) -> None:
+            object.__setattr__(self, "assigns", [])
+
+        def __setattr__(self, name: str, value: object) -> None:
+            self.assigns.append((name, value))
+            object.__setattr__(self, name, value)
+
+    class FakeOutputStream:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+    fake_sd = types.ModuleType("sounddevice")
+    fake_sd.OutputStream = FakeOutputStream  # type: ignore[attr-defined]
+    fake_sd.query_devices = lambda: [out("BuiltIn"), out("JT_Speaker")]  # type: ignore[attr-defined]
+    fake_sd.default = RecordingDefault()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+
+    from carle.speak.sink import default_query_devices, default_stream_factory
+
+    stream = default_stream_factory(device=1, samplerate=44100, channels=2, dtype="float32")
+
+    assert stream.kwargs["device"] == 1  # bound to the resolved index, not the default
+    assert default_query_devices() == [out("BuiltIn"), out("JT_Speaker")]
+    assert fake_sd.default.assigns == []  # R5: the host default was never assigned
+
+
 def test_unknown_target_raises_device_unavailable_and_never_opens_a_stream():
     audio = FakeAudio([out("BuiltIn"), out("AirPods")])
     sink = make_sink(audio, name="JT_Speaker")

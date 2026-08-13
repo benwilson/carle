@@ -34,6 +34,7 @@ lean or headless runner without the `carle[speak]` extra (KTD9).
 
 from __future__ import annotations
 
+import contextlib
 import queue
 import threading
 from collections.abc import Callable
@@ -57,6 +58,11 @@ DEFAULT_BLOCKSIZE = 1024
 DEFAULT_MAX_BLOCKS = 32
 DEFAULT_PREROLL_BLOCKS = 4
 DEFAULT_PREROLL_TIMEOUT = 2.0
+
+#: How long a full-queue `enqueue`/`finish` waits between re-checks that the player is
+#: still consuming. Bounds the producer's wait so a stopped/died player (whose callback no
+#: longer drains the queue) releases it within this interval instead of blocking forever.
+_ENQUEUE_POLL = 0.1
 
 
 class Outcome(str, Enum):
@@ -215,8 +221,12 @@ class StreamPlayer:
 
         A full queue is the backpressure signal (R2): the producer stalls here rather than
         buffering the whole stream, so TCP flow control pushes back on the caller upstream.
+        Once the player has stopped or the device has died, nothing drains the queue, so the
+        wait is bounded — the producer wakes, sees the terminal state, and drops the block
+        rather than wedging forever (a leaked producer thread on every mid-stream drop).
         """
-        self._queue.put(block)
+        if not self._put_while_consuming(block):
+            return
         with self._lock:
             self._enqueued += 1
             if self._enqueued >= self._preroll_blocks:
@@ -231,7 +241,21 @@ class StreamPlayer:
         with self._lock:
             self._source_done = True
         self._preroll_ready.set()
-        self._queue.put(_SENTINEL)
+        self._put_while_consuming(_SENTINEL)
+
+    def _put_while_consuming(self, item: object) -> bool:
+        """Put one item, blocking for backpressure but bailing if the player is done.
+
+        Returns True once the item is queued, or False if the player stopped or died first
+        — in which case the item is dropped, because no callback will ever consume it.
+        """
+        while not (self._stopping or self._done.done()):
+            try:
+                self._queue.put(item, timeout=_ENQUEUE_POLL)
+            except queue.Full:
+                continue
+            return True
+        return False
 
     # --- lifecycle --------------------------------------------------------------------
 
@@ -256,7 +280,19 @@ class StreamPlayer:
             callback=self._callback,
             finished_callback=self._finished,
         )
-        self._stream = stream
+        # Publish the stream under the lock and honour a stop that raced this setup: if
+        # `stop()` already ran, do NOT start a stream it will never tear down (an orphaned,
+        # unmonitored device stream that also holds the playback lock). Resolve instead.
+        with self._lock:
+            started = not self._stopping
+            if started:
+                self._stream = stream
+        if not started:
+            with contextlib.suppress(Exception):
+                stream.close()
+            if not self._done.done():
+                self._finished()
+            return
         stream.start()
 
     def stop(self) -> None:
@@ -264,11 +300,13 @@ class StreamPlayer:
 
         Draining releases any producer blocked on a full queue and retains no blocks, so a
         stop cannot leak memory. Safe to call before `start` (no stream yet) and idempotent
-        (the terminal signal resolves at most once).
+        (the terminal signal resolves at most once). `_stopping` and `_stream` are read
+        together under the lock so a stop racing `start` cannot miss a stream `start` is
+        mid-way through publishing.
         """
         with self._lock:
             self._stopping = True
-        stream = self._stream
+            stream = self._stream
         if stream is not None:
             stream.stop()  # a real backend fires finished_callback from here
             stream.close()
