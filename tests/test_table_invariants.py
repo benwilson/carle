@@ -446,7 +446,11 @@ def test_evidence_date_must_be_iso(tmp_path):
 
 def test_evidence_date_in_the_future_fails(tmp_path):
     """An observation cannot have happened tomorrow."""
-    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    # Compute tomorrow against the same UTC clock the validator uses (table.py's
+    # future check is deliberately UTC — see its comment). Using local date.today()
+    # here made the test flaky in the evening west of UTC, where local tomorrow ==
+    # UTC today and so is not "in the future" by the validator's clock.
+    tomorrow = (dt.datetime.now(dt.timezone.utc).date() + dt.timedelta(days=1)).isoformat()
     problems = _confirmed_with_log(tmp_path, evidence_log(tmp_path), date=tomorrow)
     assert "evidence.date" in codes(problems)
 
