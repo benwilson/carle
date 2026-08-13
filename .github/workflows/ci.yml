@@ -31,8 +31,18 @@ jobs:
       - name: Format check
         run: uv run ruff format --check .
 
+      # sounddevice binds PortAudio at import; on Linux the wheel needs the system library
+      # present (the macOS/Windows wheels bundle it). The speak tests import the audio
+      # backends, so install it before running with the [speak] extra.
+      - name: Install PortAudio (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2
+
+      # Run with the optional [speak] extra so the speak-service tests (real decode via
+      # soundfile/miniaudio/soxr, plus the audio-backend probe) run; the modules import
+      # lazily (KTD9), so the rest of the suite is unaffected either way.
       - name: Tests
-        run: uv run pytest
+        run: uv run --extra speak pytest
 
       # The honesty gate, invoked by name rather than relying on `pytest` collecting it.
       # A bare `uv run pytest` reports success on whatever it happens to find, so deleting
