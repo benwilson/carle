@@ -67,9 +67,25 @@ curl --data-binary @answer.wav http://127.0.0.1:<port>/speak/clip
 # a live stream — pipe encoded audio as it is produced
 some-tts | curl --data-binary @- http://127.0.0.1:<port>/speak/stream
 
+# a live raw-PCM stream (the low-latency format TTS APIs offer: OpenAI `pcm`,
+# ElevenLabs `pcm_*`, Google LINEAR16) — declare its shape since raw has no header
+some-tts --raw | curl --data-binary @- \
+  "http://127.0.0.1:<port>/speak/stream?format=raw&samplerate=22050&channels=1"
+
 # stop the current playback and return the robot to neutral
 curl -X POST http://127.0.0.1:<port>/speak/stop
 ```
+
+**Stream formats:** `/speak/stream` accepts every format the current TTS APIs emit — **MP3,
+WAV, FLAC, Ogg-Vorbis, Ogg-Opus, ADTS AAC**, and **declared raw PCM** (their low-latency
+option). The container is sniffed from the first bytes; `codec=`/`X-Speak-Codec` can name it
+explicitly. `/speak/clip` accepts the same set whole. A body that decodes to zero audio
+frames is a `400`, never a silent "completed". History: before 2026-08-13 the stream decoder
+(miniaudio) genuinely played only MP3 — WAV/FLAC/Opus/AAC were refused or silently produced
+nothing, measured on hardware — and the first `av`-based replacement passed decoder-sized
+blocks straight through, which the `StreamPlayer` truncates to the device block, so
+large-packet formats (WAV/FLAC especially) played sped-up and garbled on the robot until the
+decoder re-cut its output to `frames_per_block`.
 
 While a clip or stream plays, the robot holds a talking face and pulses gestures; it returns to
 neutral only after playback actually finishes (or on `stop`). A second speak request while one

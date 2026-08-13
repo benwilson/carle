@@ -7,10 +7,12 @@ the audio and hands over the bytes. Three endpoints:
 - ``POST /speak/clip`` — the request body is a whole finished clip. It is decoded and
   resampled to the device rate (`decode_clip`) and played through the sink with one
   blocking write.
-- ``POST /speak/stream`` — the request body is a live, incrementally-delivered compressed
-  stream. The body is read in chunks and fed through the streaming decoder into a
-  `StreamPlayer`; the bounded queue plus the blocking body read make TCP flow control the
-  backpressure (KTD8).
+- ``POST /speak/stream`` — the request body is a live, incrementally-delivered stream:
+  compressed audio (MP3, WAV, FLAC, Ogg-Vorbis, Ogg-Opus, ADTS AAC — the formats current
+  TTS APIs emit), or headerless raw PCM declared with ``format=raw&samplerate=&channels=``
+  (their low-latency option). The body is read in chunks and fed through the streaming
+  decoder into a `StreamPlayer`; the bounded queue plus the blocking body read make TCP
+  flow control the backpressure (KTD8).
 - ``POST /speak/stop`` — interrupt the in-flight clip or stream and return the robot to
   neutral (R7).
 
@@ -270,13 +272,18 @@ class SpeakService:
         )
 
     def _default_stream_decode(
-        self, chunks: Iterable[bytes], *, source_format: str | None = None
+        self,
+        chunks: Iterable[bytes],
+        *,
+        source_format: str | None = None,
+        declared: RawPcmFormat | None = None,
     ) -> Iterator[object]:
         for buf in stream_pcm_blocks(
             chunks,
             target_samplerate=self._samplerate,
             target_channels=self._channels,
             source_format=source_format,
+            declared=declared,
         ):
             yield buf.samples
 
@@ -340,23 +347,39 @@ class SpeakService:
     def handle_stream(
         self, body: Iterable[bytes], *, params: dict | None = None, headers: Any = None
     ) -> Response:
-        """Read the body incrementally into a `StreamPlayer` and play as it arrives (F2)."""
+        """Read the body incrementally into a `StreamPlayer` and play as it arrives (F2).
+
+        `codec=`/`X-Speak-Codec` may name the container to skip probing; `format=raw`
+        (with `samplerate` and `channels`, as on the clip endpoint) declares headerless
+        raw PCM — the low-latency shape TTS APIs stream.
+        """
         source_format = _get(params or {}, headers, "codec", "X-Speak-Codec")
+        try:
+            declared = _parse_declared(params or {}, headers)
+        except ValueError as exc:
+            return _err(400, f"bad format parameters: {exc}")
         if not self._acquire():
             return _err(409, "busy: a playback is already active")
         try:
-            return self._play_stream(body, source_format)
+            return self._play_stream(body, source_format, declared)
         finally:
             self._release()
 
-    def _play_stream(self, body: Iterable[bytes], source_format: str | None) -> Response:
+    def _play_stream(
+        self,
+        body: Iterable[bytes],
+        source_format: str | None,
+        declared: RawPcmFormat | None = None,
+    ) -> Response:
         player = self._stream_factory()
         self._arm_stop(player.stop)
         errors: dict[str, BaseException] = {}
 
         def produce() -> None:
             try:
-                for block in self._stream_decode(body, source_format=source_format):
+                for block in self._stream_decode(
+                    body, source_format=source_format, declared=declared
+                ):
                     player.enqueue(block)
                 player.finish()
             except DecodeError as exc:

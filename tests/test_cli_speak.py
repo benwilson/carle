@@ -317,7 +317,9 @@ def test_clip_and_stream_both_reach_the_sink_and_trigger_animation():
     service = SpeakService(
         clip_player=clip,
         stream_factory=lambda: stream,
-        stream_decode=lambda body, *, source_format=None: iter([b"blockA", b"blockB"]),
+        stream_decode=lambda body, *, source_format=None, declared=None: iter(
+            [b"blockA", b"blockB"]
+        ),
         animation=animation,
     )
 

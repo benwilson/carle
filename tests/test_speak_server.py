@@ -145,7 +145,7 @@ class _resolvable:
 Future = _resolvable
 
 
-def fake_stream_decode(chunks, *, source_format=None):
+def fake_stream_decode(chunks, *, source_format=None, declared=None):
     """Passthrough decoder: each incoming body chunk becomes one enqueued block."""
     yield from chunks
 
@@ -302,7 +302,7 @@ def test_stream_on_unavailable_device_errors_and_does_not_animate():
 def test_stream_decode_error_is_a_400():
     player = FakeStreamPlayer()
 
-    def boom(chunks, *, source_format=None):
+    def boom(chunks, *, source_format=None, declared=None):
         yield from ()
         raise DecodeError("corrupt stream")
 
@@ -319,7 +319,7 @@ def test_stream_non_decode_producer_error_is_a_500_not_a_false_success():
     # swallowed into a 200 — the error key is written and surfaced as a 500.
     player = FakeStreamPlayer()
 
-    def boom(chunks, *, source_format=None):
+    def boom(chunks, *, source_format=None, declared=None):
         yield from ()
         raise RuntimeError("resampler blew up")
 
@@ -524,3 +524,31 @@ def _wait_until(predicate, timeout: float = 5.0) -> None:
             return
         time.sleep(0.005)
     raise AssertionError("condition not met within timeout")
+
+
+def test_stream_passes_declared_raw_params_to_the_decoder():
+    captured = {}
+
+    def capture(chunks, *, source_format=None, declared=None):
+        captured["declared"] = declared
+        yield from chunks
+
+    service = SpeakService(stream_factory=FakeStreamPlayer, stream_decode=capture)
+
+    resp = service.handle_stream(
+        iter([b"x"]),
+        params={"format": ["raw"], "samplerate": ["22050"], "channels": ["1"]},
+    )
+
+    assert resp.status == 200
+    assert captured["declared"] == RawPcmFormat(samplerate=22050, channels=1, dtype="int16")
+
+
+def test_stream_raw_without_samplerate_or_channels_is_a_400():
+    service = SpeakService(
+        stream_factory=FakeStreamPlayer, stream_decode=fake_stream_decode
+    )
+
+    resp = service.handle_stream(iter([b"x"]), params={"format": ["raw"]})
+
+    assert resp.status == 400

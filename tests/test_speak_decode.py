@@ -1,15 +1,17 @@
 """U2 — audio decoding and normalization into one internal PCM shape.
 
-Fixtures are synthesized in-test with `soundfile` (a short sine tone) rather than
-committed, so the tests carry no binary blobs and prove the real decode paths end to end:
-WAV through `soundfile`, compressed through `miniaudio`, streaming through `miniaudio`'s
-incremental decoder, and resampling through `soxr`.
+Fixtures are synthesized in-test with `soundfile` (a short sine tone) — plus `av` for the
+one format nothing else here encodes (ADTS AAC) — rather than committed, so the tests
+carry no binary blobs and prove the real decode paths end to end: WAV clips through
+`soundfile`, compressed clips through `miniaudio` (AAC/Opus clips through the `av`
+fallback), streaming through `av`'s incremental demux/decode, raw declared PCM through
+the frame-aligned carry path, and resampling through `soxr`.
 
-Note on the compressed fixture: `soundfile` in this environment can also write MP3, so
-`compressed_bytes` covers the true MP3 branch. FLAC and OGG are exercised too — all three
-travel the identical `miniaudio.decode` / `miniaudio.stream_any` code (only the container
-sniff differs), so if an MP3 encoder were ever unavailable, the FLAC/OGG cases alone would
-still cover the compressed path.
+Note on the compressed clip fixture: `soundfile` in this environment can also write MP3,
+so the clip tests cover the true MP3 branch; FLAC and OGG travel the identical
+`miniaudio.decode` code (only the container sniff differs). The stream tests
+parameterize over every container a TTS pipeline plausibly pipes: WAV, FLAC, Ogg-Vorbis,
+MP3, Ogg-Opus, ADTS AAC, and declared raw PCM.
 """
 
 from __future__ import annotations
@@ -90,7 +92,6 @@ def test_incrementally_decodes_a_chunked_compressed_stream():
             target_samplerate=44100,
             target_channels=2,
             source_format="mp3",
-            frames_per_block=1024,
         )
     )
 
@@ -250,3 +251,170 @@ def test_normalize_mixes_before_resampling():
     assert pcm.samplerate == 44100
     assert pcm.samples.shape[1] == 2
     assert pcm.frames == pytest.approx(int(48000 * 0.2) * 44100 / 48000, rel=0.01)
+
+
+# --- the TTS stream formats (the av path) ---------------------------------------------
+
+
+def encode_ogg_opus(samples: np.ndarray, samplerate: int) -> bytes:
+    """Encode an Ogg-Opus fixture via soundfile (libsndfile carries an Opus encoder)."""
+    buffer = io.BytesIO()
+    sf.write(buffer, samples, samplerate, format="OGG", subtype="OPUS")
+    return buffer.getvalue()
+
+
+def encode_adts_aac(samples: np.ndarray, samplerate: int) -> bytes:
+    """Encode an ADTS AAC fixture with `av` (neither soundfile nor miniaudio does AAC)."""
+    import av
+
+    buffer = io.BytesIO()
+    interleaved = np.ascontiguousarray(samples, dtype=np.float32).reshape(1, -1)
+    with av.open(buffer, mode="w", format="adts") as container:
+        stream = container.add_stream("aac", rate=samplerate)
+        stream.layout = "stereo"
+        frame = av.AudioFrame.from_ndarray(interleaved, format="flt", layout="stereo")
+        frame.sample_rate = samplerate
+        for packet in stream.encode(frame):
+            container.mux(packet)
+        for packet in stream.encode(None):
+            container.mux(packet)
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize("fmt", ["WAV", "FLAC", "OGG", "MP3"])
+def test_stream_decodes_every_sniffable_container(fmt):
+    # WAV and FLAC streamed nothing (or zero frames, silently) on the old decoder; all
+    # four are formats a TTS pipeline may pipe at the stream endpoint.
+    data = encode(tone(seconds=0.4, samplerate=44100, channels=2), 44100, fmt)
+
+    blocks = list(
+        stream_pcm_blocks(iter(chunked(data, 512)), target_samplerate=44100, target_channels=2)
+    )
+
+    total = sum(block.frames for block in blocks)
+    assert total > int(44100 * 0.3)
+    assert all(block.samples.dtype == np.float32 for block in blocks)
+    assert all(block.channels == 2 for block in blocks)
+
+
+def test_stream_decodes_ogg_opus():
+    # Opus shares OGG's magic with Vorbis but is a different codec — the case the old
+    # vorbis-only decoder could never play. Opus is fixed at 48 kHz internally.
+    data = encode_ogg_opus(tone(seconds=0.4, samplerate=48000, channels=2), 48000)
+
+    blocks = list(
+        stream_pcm_blocks(iter(chunked(data, 512)), target_samplerate=44100, target_channels=2)
+    )
+
+    assert sum(block.frames for block in blocks) > int(44100 * 0.3)
+
+
+def test_stream_decodes_adts_aac():
+    data = encode_adts_aac(tone(seconds=0.4, samplerate=44100, channels=2), 44100)
+
+    assert sniff_container(data) == "aac"
+    blocks = list(
+        stream_pcm_blocks(iter(chunked(data, 512)), target_samplerate=44100, target_channels=2)
+    )
+
+    assert sum(block.frames for block in blocks) > int(44100 * 0.3)
+
+
+def test_stream_decodes_declared_raw_pcm_across_chunk_boundaries():
+    samples = tone(seconds=0.4, samplerate=22050, channels=1)
+    pcm16 = (samples * 32767.0).astype(np.int16).tobytes()
+    declared = RawPcmFormat(samplerate=22050, channels=1, dtype="int16")
+
+    # An odd chunk size splits frames across chunk boundaries; the carry must keep every
+    # frame. The declared rate differs from the target so the stateful resampler runs.
+    blocks = list(
+        stream_pcm_blocks(
+            iter(chunked(pcm16, 333)),
+            target_samplerate=44100,
+            target_channels=2,
+            declared=declared,
+        )
+    )
+
+    total = sum(block.frames for block in blocks)
+    assert all(block.channels == 2 for block in blocks)
+    assert total == pytest.approx(int(22050 * 0.4) * 2, rel=0.02)
+
+
+def test_raw_stream_ending_mid_frame_is_an_error():
+    declared = RawPcmFormat(samplerate=22050, channels=2, dtype="int16")
+
+    with pytest.raises(DecodeError):
+        list(
+            stream_pcm_blocks(
+                iter([b"\x00" * 6]),  # six bytes: one and a half 4-byte frames
+                target_samplerate=22050,
+                target_channels=2,
+                declared=declared,
+            )
+        )
+
+
+def test_garbage_stream_is_an_error_not_a_silent_success():
+    # The old decoder could "complete" a stream that produced zero PCM frames — the
+    # caller got 200 and the robot said nothing. Any zero-frame outcome must raise.
+    with pytest.raises(DecodeError):
+        list(stream_pcm_blocks(iter([b"\x00" * 9000]), target_samplerate=44100))
+
+
+def test_empty_stream_is_an_error():
+    with pytest.raises(DecodeError):
+        list(stream_pcm_blocks(iter([]), target_samplerate=44100))
+
+
+def test_clip_decodes_ogg_opus_and_adts_aac():
+    # Both land on the av fallback: Opus past miniaudio's vorbis-only OGG path, AAC past
+    # the sniffer's new ADTS branch.
+    for data in (
+        encode_ogg_opus(tone(seconds=0.4, samplerate=48000, channels=2), 48000),
+        encode_adts_aac(tone(seconds=0.4, samplerate=44100, channels=2), 44100),
+    ):
+        pcm = decode_clip(data, target_samplerate=44100, target_channels=2)
+        assert pcm.samples.dtype == np.float32
+        assert pcm.frames > int(44100 * 0.3)
+
+
+def test_stream_blocks_never_exceed_the_player_block_size():
+    # The StreamPlayer hands one block to one device callback and TRUNCATES an oversized
+    # block, so any block over `frames_per_block` plays sped-up and garbled (the WAV/FLAC
+    # bug heard on hardware 2026-08-13: a WAV demuxer's packets dwarf an MP3 frame). Every
+    # format must come out re-cut to the device cadence: all blocks exactly
+    # `frames_per_block` frames except a short final one.
+    sources = [
+        encode(tone(seconds=0.4, samplerate=44100, channels=2), 44100, "WAV"),
+        encode(tone(seconds=0.4, samplerate=44100, channels=2), 44100, "FLAC"),
+        encode(tone(seconds=0.4, samplerate=44100, channels=2), 44100, "MP3"),
+        encode_ogg_opus(tone(seconds=0.4, samplerate=48000, channels=2), 48000),
+        encode_adts_aac(tone(seconds=0.4, samplerate=44100, channels=2), 44100),
+    ]
+    for data in sources:
+        blocks = list(
+            stream_pcm_blocks(
+                iter(chunked(data, 512)),
+                target_samplerate=44100,
+                target_channels=2,
+                frames_per_block=1024,
+            )
+        )
+        assert all(block.frames == 1024 for block in blocks[:-1])
+        assert blocks[-1].frames <= 1024
+
+    # The raw declared path re-cuts too: one big posted body must not become huge blocks.
+    samples = tone(seconds=0.4, samplerate=44100, channels=1)
+    pcm16 = (samples * 32767.0).astype(np.int16).tobytes()
+    blocks = list(
+        stream_pcm_blocks(
+            iter([pcm16]),  # a single giant chunk
+            target_samplerate=44100,
+            target_channels=2,
+            declared=RawPcmFormat(samplerate=44100, channels=1, dtype="int16"),
+            frames_per_block=1024,
+        )
+    )
+    assert all(block.frames == 1024 for block in blocks[:-1])
+    assert blocks[-1].frames <= 1024
