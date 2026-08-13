@@ -302,17 +302,20 @@ class StreamPlayer:
             raise
 
     def _render(self, outdata: object, frames: int, status: object) -> None:
-        if status:
-            with self._lock:
-                self._underflows += 1  # PortAudio already flagged a starve for this block
         try:
             item = self._queue.get_nowait()
         except queue.Empty:
             # Underflow: no data ready. Write silence and keep the stream alive (R2).
+            # This is the underrun, counted once — a truthy `status` on the same empty
+            # callback describes the same starve, so we don't reach the check below.
             outdata[:] = 0  # type: ignore[index]
             with self._lock:
                 self._underflows += 1
             return
+        if status:
+            # A starve PortAudio flagged for this block even though data was ready.
+            with self._lock:
+                self._underflows += 1
         if item is _SENTINEL:
             # Source drained and every real block consumed: begin the device-drain stop.
             assert self._stop_exc is not None

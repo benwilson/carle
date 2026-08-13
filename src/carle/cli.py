@@ -157,6 +157,7 @@ def _add_speak_server_parser(sub: argparse._SubParsersAction) -> None:
     lean install; the missing extra only bites when the server actually serves.
     """
     from carle.daemon.server import DEFAULT_SOCKET_PATH
+    from carle.speak.server import DEFAULT_DEVICE_NAME
     from carle.speak.server import DEFAULT_PORT as SPEAK_DEFAULT_PORT
 
     speak = sub.add_parser(
@@ -165,8 +166,8 @@ def _add_speak_server_parser(sub: argparse._SubParsersAction) -> None:
     )
     speak.add_argument(
         "--device",
-        default="JT_Speaker",
-        help="target output device name (default: JT_Speaker)",
+        default=DEFAULT_DEVICE_NAME,
+        help="target output device name (default: %(default)s)",
     )
     speak.add_argument(
         "--port",
@@ -721,9 +722,10 @@ def _run_speak_server(args: argparse.Namespace) -> int:
     """Start the loopback speak server, degrading cleanly with no `carle[speak]` extra.
 
     The speak modules are imported here, lazily, so a lean install still runs every other
-    verb. Importing `carle.speak.service` is itself backend-free; the PortAudio backends
-    load only when the server builds its real sink/stream, so a missing extra can surface
-    either at import or at serve time. Both are caught and reported as one line, exit 1.
+    verb. This catches the case where importing the speak package fails for a missing
+    audio backend and reports it as one line, exit 1, instead of a traceback. Once the
+    server is running, a per-request playback failure surfaces to the HTTP client, not
+    here — the accept loop keeps serving.
     """
     try:
         from carle.speak.service import build_speak_server, run_speak_server
@@ -737,7 +739,7 @@ def _run_speak_server(args: argparse.Namespace) -> int:
         host, port = server.address
         print(f"speak server listening on http://{host}:{port}")
         run_speak_server(server)
-    except (ImportError, ModuleNotFoundError):
+    except ImportError:
         print(SPEAK_EXTRA_HELP, file=sys.stderr)
         return 1
     return 0

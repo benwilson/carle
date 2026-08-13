@@ -65,6 +65,9 @@ LOOPBACK = "127.0.0.1"
 LOOPBACK_HOSTS = frozenset({LOOPBACK, "localhost", "::1"})
 DEFAULT_PORT = 8081
 
+#: The robot advertises its A2DP audio sink under this Bluetooth name — the default target.
+DEFAULT_DEVICE_NAME = "JT_Speaker"
+
 #: The A2DP sink is commonly 44.1 kHz stereo; the default decode target matches (KTD6).
 DEFAULT_SAMPLERATE = 44100
 
@@ -217,7 +220,7 @@ class SpeakService:
     def __init__(
         self,
         *,
-        device_name: str = "JT_Speaker",
+        device_name: str = DEFAULT_DEVICE_NAME,
         samplerate: int = DEFAULT_SAMPLERATE,
         channels: int = DEFAULT_CHANNELS,
         clip_player: ClipPlayer | None = None,
