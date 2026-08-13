@@ -153,7 +153,11 @@ def blk(marker: int) -> list[int]:
 
 
 def make_player(
-    backend: FakeBackend, *, preroll_blocks: int = 0, max_blocks: int = 32
+    backend: FakeBackend,
+    *,
+    preroll_blocks: int = 0,
+    max_blocks: int = 32,
+    sink: object = None,
 ) -> StreamPlayer:
     return StreamPlayer(
         "JT_Speaker",
@@ -165,6 +169,7 @@ def make_player(
         query_devices=backend.query_devices,
         stream_factory=backend.stream_factory,
         callback_exceptions=backend.callback_exceptions,
+        sink=sink,
     )
 
 
@@ -181,6 +186,27 @@ def start_player(
     player.start()
     assert backend.stream is not None
     return player, backend.stream
+
+
+def test_players_sharing_a_sink_resolve_the_device_once():
+    # Two players — as two sequential stream requests would build — sharing one AudioSink
+    # scan the device list once, not once per request (the per-request re-resolve the clip
+    # path already avoids).
+    from carle.speak.sink import AudioSink
+
+    scans = {"n": 0}
+
+    def counting_query() -> list[dict]:
+        scans["n"] += 1
+        return [out("JT_Speaker")]
+
+    shared = AudioSink("JT_Speaker", query_devices=counting_query)
+    backend = FakeBackend()
+
+    make_player(backend, sink=shared).start()
+    make_player(backend, sink=shared).start()
+
+    assert scans["n"] == 1  # resolved once and cached across both players
 
 
 def test_module_imports_and_exposes_the_outcomes_without_a_backend():

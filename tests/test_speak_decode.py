@@ -196,6 +196,28 @@ def test_raw_pcm_with_declared_format_is_accepted_and_normalized():
     assert pcm.samples[1, 0] == pytest.approx(-1.0, abs=1e-4)
 
 
+def test_raw_unsigned_8bit_pcm_is_centred_not_dc_offset():
+    # 8-bit PCM is unsigned: silence is the midpoint 128, full scale is 0 and 255. Without
+    # re-centring, every sample would land in [0, 1) and play with a constant DC offset.
+    frames = np.array([[128, 128], [0, 0], [255, 255]], dtype=np.uint8)
+    raw = frames.tobytes()
+
+    pcm = decode_clip(
+        raw,
+        target_samplerate=44100,
+        target_channels=2,
+        declared=RawPcmFormat(samplerate=44100, channels=2, dtype="uint8"),
+    )
+
+    assert pcm.samples.dtype == np.float32
+    # Midpoint 128 is silence (~0), not +0.5; 0 is the negative rail, 255 near the positive.
+    assert pcm.samples[0, 0] == pytest.approx(0.0, abs=1e-4)
+    assert pcm.samples[1, 0] == pytest.approx(-1.0, abs=1e-4)
+    assert pcm.samples[2, 0] == pytest.approx(0.992, abs=1e-3)
+    # The whole clip is zero-mean-ish, not biased positive (the DC-offset regression).
+    assert abs(float(pcm.samples.mean())) < 0.01
+
+
 def test_unsupported_garbage_bytes_raise_a_clear_decode_error():
     with pytest.raises(DecodeError):
         decode_clip(b"this is not audio at all", target_samplerate=44100)

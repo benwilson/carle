@@ -295,7 +295,10 @@ def _decode_raw_pcm(data: bytes, declared: RawPcmFormat) -> tuple[np.ndarray, in
 def _to_float32_2d(samples: np.ndarray, *, channels: int) -> np.ndarray:
     """Coerce a sample array to a float32 `(frames, channels)` array in `[-1, 1)`.
 
-    Integer PCM is scaled by the dtype's full-scale magnitude; float PCM is cast as-is.
+    Signed integer PCM is scaled by the dtype's full-scale magnitude. Unsigned integer PCM
+    (e.g. 8-bit `uint8`, where silence is the midpoint 128, not 0) is first re-centred on
+    its midpoint, then scaled — otherwise every sample lands in `[0, 1)` and the clip plays
+    with a constant DC offset (a loud thump / halved headroom). Float PCM is cast as-is.
     """
     import numpy as np  # noqa: PLC0415 - lazy so the module imports without the extra
 
@@ -303,8 +306,12 @@ def _to_float32_2d(samples: np.ndarray, *, channels: int) -> np.ndarray:
     if array.ndim == 1:
         array = array.reshape(-1, channels)
     if np.issubdtype(array.dtype, np.integer):
-        scale = float(np.iinfo(array.dtype).max) + 1.0
-        array = array.astype(np.float32) / scale
+        info = np.iinfo(array.dtype)
+        if info.min == 0:  # unsigned: silence is the midpoint, so centre before scaling
+            midpoint = (float(info.max) + 1.0) / 2.0
+            array = (array.astype(np.float32) - midpoint) / midpoint
+        else:  # signed: 0 is already silence; scale by full-scale magnitude
+            array = array.astype(np.float32) / (float(info.max) + 1.0)
     else:
         array = array.astype(np.float32, copy=False)
     return np.ascontiguousarray(array, dtype=np.float32)
