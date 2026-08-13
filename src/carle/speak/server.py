@@ -240,6 +240,11 @@ class SpeakService:
         self._clip_player = clip_player or SinkClipPlayer(
             AudioSink(device_name), samplerate=samplerate, channels=channels
         )
+        #: One sink shared across the per-request stream players so the device-index cache
+        #: stays warm — the clip path already caches one; the stream path rebuilt it each
+        #: request, re-scanning the device list right before the pre-roll budget (built lazily
+        #: so the real AudioSink — and its sounddevice import — is only touched on a real stream).
+        self._stream_sink: AudioSink | None = None
         self._stream_factory = stream_factory or self._default_stream_factory
         self._stream_decode = stream_decode or self._default_stream_decode
         self._animation = animation or NoopAnimation()
@@ -255,7 +260,14 @@ class SpeakService:
     # --- defaults (build the real, lazy U1/U3 components) --------------------------
 
     def _default_stream_factory(self) -> StreamLike:
-        return StreamPlayer(self._device_name, samplerate=self._samplerate, channels=self._channels)
+        if self._stream_sink is None:
+            self._stream_sink = AudioSink(self._device_name)
+        return StreamPlayer(
+            self._device_name,
+            samplerate=self._samplerate,
+            channels=self._channels,
+            sink=self._stream_sink,
+        )
 
     def _default_stream_decode(
         self, chunks: Iterable[bytes], *, source_format: str | None = None

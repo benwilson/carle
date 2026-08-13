@@ -75,13 +75,20 @@ class FakeClipPlayer:
 class FakeStreamPlayer:
     """A stream player whose done-signal resolves on finish (COMPLETED) or stop (STOPPED)."""
 
-    def __init__(self, *, unavailable: bool = False, start_error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        unavailable: bool = False,
+        start_error: Exception | None = None,
+        deaf: bool = False,
+    ) -> None:
         self.enqueued: list[object] = []
         self.started = False
         self.finished = False
         self.stopped = False
         self._unavailable = unavailable
         self._start_error = start_error
+        self._deaf = deaf  # a stalled stream: neither finish nor stop resolves the signal
         self._done: Future = _resolvable()
 
     def start(self) -> None:
@@ -96,11 +103,13 @@ class FakeStreamPlayer:
 
     def finish(self) -> None:
         self.finished = True
-        self._done.resolve(Outcome.COMPLETED)
+        if not self._deaf:
+            self._done.resolve(Outcome.COMPLETED)
 
     def stop(self) -> None:
         self.stopped = True
-        self._done.resolve(Outcome.STOPPED)
+        if not self._deaf:
+            self._done.resolve(Outcome.STOPPED)
 
     def wait(self, timeout: float | None = None) -> Outcome:
         return self._done.result(timeout)
@@ -330,6 +339,68 @@ def test_stream_start_failure_other_than_unavailable_is_500_and_cleans_up():
     assert resp.status == 500
     assert player.stopped is True  # cleaned up despite the non-DeviceUnavailable fault
     assert anim.starts == 0  # animation never began (start failed before on_start)
+
+
+def test_stalled_stream_times_out_forces_a_stop_then_reports_died(monkeypatch):
+    # A stream that opens but never drains (finish/stop never resolve the terminal signal):
+    # _await_stream must time out, force a stop, and — if that too does not resolve — fall
+    # back to DIED rather than blocking the request forever.
+    monkeypatch.setattr("carle.speak.server._JOIN_TIMEOUT", 0.05)
+    player = FakeStreamPlayer(deaf=True)  # neither finish nor stop resolves the signal
+    anim = FakeAnimation()
+    service = SpeakService(
+        stream_factory=lambda: player,
+        stream_decode=fake_stream_decode,
+        animation=anim,
+        stream_timeout=0.05,
+    )
+
+    resp = service.handle_stream(iter([b"x"]))
+
+    assert resp.body["outcome"] == "died"  # the stall resolved to DIED, not a hang
+    assert player.stopped is True  # the timeout forced the device down
+    assert anim.ends == [Outcome.DIED]  # the robot is still returned to neutral (R7)
+
+
+def test_real_sink_clip_player_decodes_resolves_and_plays_through_the_sink():
+    # The default clip wiring (SinkClipPlayer over U1's AudioSink) is otherwise only stood in
+    # for by fakes. Drive the real class against a fake sink + fake decoder so its prepare ->
+    # resolve -> play path has actual coverage.
+    from carle.speak.server import SinkClipPlayer
+
+    class FakePcm:
+        samples = "PCM"
+        samplerate = 44100
+        channels = 2
+
+    class FakeSink:
+        def __init__(self) -> None:
+            self.resolved = 0
+            self.played: list[tuple] = []
+
+        def resolve(self) -> int:
+            self.resolved += 1
+            return 0
+
+        def play(self, pcm, *, samplerate, channels) -> None:
+            self.played.append((pcm, samplerate, channels))
+
+    decoded: dict = {}
+
+    def fake_decode(data, *, target_samplerate, target_channels, declared=None):
+        decoded["args"] = (data, target_samplerate, target_channels, declared)
+        return FakePcm()
+
+    sink = FakeSink()
+    player = SinkClipPlayer(sink, samplerate=44100, channels=2, decode=fake_decode)
+
+    prepared = player.prepare(b"clip-bytes")
+    assert decoded["args"] == (b"clip-bytes", 44100, 2, None)
+    assert sink.resolved == 1  # device resolved during prepare (raises before on_start, AE5)
+
+    player.play(prepared)
+    assert sink.played == [("PCM", 44100, 2)]  # the decoded buffer reached the sink
+    player.stop()  # the real stop() is a documented no-op; it must not raise
 
 
 # --- real loopback HTTP server tests --------------------------------------------------

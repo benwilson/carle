@@ -158,6 +158,7 @@ class StreamPlayer:
         callback_exceptions: Callable[
             [], tuple[type[BaseException], type[BaseException]]
         ] = default_callback_exceptions,
+        sink: AudioSink | None = None,
     ) -> None:
         self._samplerate = samplerate
         self._channels = channels
@@ -168,8 +169,10 @@ class StreamPlayer:
         self._stream_factory = stream_factory
         self._callback_exceptions = callback_exceptions
 
-        #: The device-name -> index resolution is reused from U1, never duplicated.
-        self._sink = AudioSink(device_name, query_devices=query_devices)
+        #: The device-name -> index resolution is reused from U1, never duplicated. A caller
+        #: may inject a shared `AudioSink` so its resolved-index cache survives across players
+        #: (one per stream request) instead of re-scanning the device list every time.
+        self._sink = sink or AudioSink(device_name, query_devices=query_devices)
 
         #: The bounded backpressure point: a full queue blocks the producer's `enqueue`.
         self._queue: queue.Queue[object] = queue.Queue(maxsize=max_blocks)
