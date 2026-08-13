@@ -18,16 +18,26 @@ from carle.speak.decode import (
     decode_clip,
     stream_pcm_blocks,
 )
+from carle.speak.server import (
+    AnimationHook,
+    NoopAnimation,
+    SpeakServer,
+    SpeakService,
+)
 from carle.speak.sink import AudioSink, DeviceUnavailableError
 from carle.speak.stream import Outcome, StreamPlayer
 
 __all__ = [
+    "AnimationHook",
     "AudioSink",
     "DecodeError",
     "DeviceUnavailableError",
+    "NoopAnimation",
     "Outcome",
     "PcmBuffer",
     "RawPcmFormat",
+    "SpeakServer",
+    "SpeakService",
     "StreamPlayer",
     "decode_clip",
     "stream_pcm_blocks",
